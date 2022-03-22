@@ -68,32 +68,19 @@ impl<'a> Chunk<'a> {
                 debug::debug(format!("opcode: {:?}", OpCode::Return));
             }
             Some(OpCode::Constant) => {
-                debug::debug(format!("opcode: {:?}", OpCode::Constant));
-                let constant = self.code.get(offset + 1).unwrap();
-                debug::debug(format!("constant index: {}", constant));
-                //TODO: I am not sure if converting u8 to size here is fine or not
-                debug::debug(format!(
-                    "constant value: {:?}",
-                    self.constants.get(*constant as usize)
-                ));
+                let constant_index = self.code.get(offset + 1).unwrap();
+                self.print_debug_info(OpCode::Constant, *constant_index as usize);
                 // return 1 byte of constant_index + 1 byte of opcode
                 return offset + 2;
             }
             Some(OpCode::ConstantLong) => {
-                debug::debug(format!("opcode: {:?}", OpCode::ConstantLong));
                 let mut constant_index_bytes = [0, 0, 0, 0, 0, 0, 0, 0];
                 // our long constant index is usize which is 8 bytes
                 for i in 1..=8 {
                     constant_index_bytes[i - 1] = *self.code.get(i + offset).unwrap();
                 }
-
                 let constant_index = usize::from_ne_bytes(constant_index_bytes);
-                debug::debug(format!("constant index: {}", constant_index));
-                //TODO: I am not sure if converting u8 to size here is fine or not
-                debug::debug(format!(
-                    "constant value: {:?}",
-                    self.constants.get(constant_index as usize)
-                ));
+                self.print_debug_info(OpCode::ConstantLong, constant_index);
                 // return 8 bytes of constant_index + 1 byte of opcode
                 return offset + 9;
             }
@@ -102,5 +89,15 @@ impl<'a> Chunk<'a> {
             }
         }
         offset + 1
+    }
+
+    fn print_debug_info(&self, opcode: OpCode, constant_index: usize) {
+        debug::debug(format!("opcode: {:?}", opcode));
+        debug::debug(format!("constant index: {}", constant_index));
+        //TODO: I am not sure if converting u8 to size here is fine or not
+        debug::debug(format!(
+            "constant value: {:?}",
+            self.constants.get(constant_index as usize)
+        ));
     }
 }
