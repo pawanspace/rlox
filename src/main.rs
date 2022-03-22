@@ -34,6 +34,6 @@ mod tests {
     use test::Bencher;
     #[bench]
     fn bench_create_chunks(b: &mut Bencher) {
-        b.iter(|| execute);
+        b.iter(execute);
     }
 }
