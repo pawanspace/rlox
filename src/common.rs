@@ -5,8 +5,8 @@ use num_derive::FromPrimitive;
 #[derive(FromPrimitive)]
 pub enum OpCode {
     Return = 1,
-    Constant = 2
+    Constant = 2,
+    ConstantLong = 3,
 }
 
 pub type Value = f64;
-

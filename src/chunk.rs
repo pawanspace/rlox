@@ -1,4 +1,5 @@
 use crate::common::{OpCode, Value};
+use crate::debug;
 use crate::value::{self, ValueArray};
 extern crate num;
 
@@ -23,21 +24,37 @@ impl<'a> Chunk<'a> {
         self.lines.push(line);
     }
 
-    pub(crate) fn add_constant(&mut self, value: &'a Value) -> usize {
+    fn add_constant(&mut self, value: &'a Value) -> usize {
         self.constants.append(value);
         self.constants.count()
     }
 
+    // version of write_chunk
+    pub(crate) fn write_constant(&mut self, value: &'a Value, line: u32) {
+        let index = self.add_constant(value);
+        // for any long constant that doesn't fit in u8, we store all bytes
+        if index <= 255 {
+            self.write_chunk(OpCode::Constant as u8, line);
+            self.write_chunk(index as u8, line);
+        } else {
+            self.write_chunk(OpCode::ConstantLong as u8, line);
+            let bytes = index.to_ne_bytes();
+            for byte in bytes.iter() {
+                self.write_chunk(*byte, line);
+            }
+        }
+    }
+
     pub(crate) fn disassemble_chunk(&self, name: &str) {
-        println!("=== {} === ", name);
+        debug::debug(format!("=== {} === ", name));
         let mut offset: usize = 0;
         while offset < self.code.len() {
-            println!("{:04}", offset);
+            debug::debug(format!("{:04}", offset));
             // if its on same line
             if offset > 0 && self.lines.get(offset) == self.lines.get(offset - 1) {
-                println!(" | ");
+                debug::debug(" | ".to_string());
             } else {
-                println!("Line: {}", self.lines.get(offset).unwrap());
+                debug::debug(format!("Line: {}", self.lines.get(offset).unwrap()));
             }
             let instruction = self.code.get(offset).unwrap();
             offset = self.handle_instruction(instruction, offset);
@@ -48,21 +65,40 @@ impl<'a> Chunk<'a> {
         let opcode = num::FromPrimitive::from_u8(*instruction);
         match opcode {
             Some(OpCode::Return) => {
-                println!("opcode: {:?}", OpCode::Return);
+                debug::debug(format!("opcode: {:?}", OpCode::Return));
             }
             Some(OpCode::Constant) => {
-                println!("opcode: {:?}", OpCode::Constant);
+                debug::debug(format!("opcode: {:?}", OpCode::Constant));
                 let constant = self.code.get(offset + 1).unwrap();
-                println!("constant index: {}", constant);
+                debug::debug(format!("constant index: {}", constant));
                 //TODO: I am not sure if converting u8 to size here is fine or not
-                println!(
+                debug::debug(format!(
                     "constant value: {:?}",
                     self.constants.get(*constant as usize)
-                );
+                ));
+                // return 1 byte of constant_index + 1 byte of opcode
                 return offset + 2;
             }
+            Some(OpCode::ConstantLong) => {
+                debug::debug(format!("opcode: {:?}", OpCode::ConstantLong));
+                let mut constant_index_bytes = [0, 0, 0, 0, 0, 0, 0, 0];
+                // our long constant index is usize which is 8 bytes
+                for i in 1..=8 {
+                    constant_index_bytes[i - 1] = *self.code.get(i + offset).unwrap();
+                }
+
+                let constant_index = usize::from_ne_bytes(constant_index_bytes);
+                debug::debug(format!("constant index: {}", constant_index));
+                //TODO: I am not sure if converting u8 to size here is fine or not
+                debug::debug(format!(
+                    "constant value: {:?}",
+                    self.constants.get(constant_index as usize)
+                ));
+                // return 8 bytes of constant_index + 1 byte of opcode
+                return offset + 9;
+            }
             _ => {
-                println!("Unknown instruction");
+                debug::debug("Unknown instruction".to_string());
             }
         }
         offset + 1
