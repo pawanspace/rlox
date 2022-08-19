@@ -1,6 +1,10 @@
 pub fn debug(message: String) {
-    let debug_flag = std::env::args().nth(1);
-    if let Some("debug") = debug_flag.as_deref() {
+    if is_debug() {
         println!("{}", message)
     }
+}
+
+pub fn is_debug() -> bool {
+    let debug_flag = std::env::args().nth(1);
+    Some("debug") == debug_flag.as_deref()
 }

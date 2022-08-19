@@ -1,39 +1,51 @@
-#![feature(test)]
-extern crate test;
-
-use crate::common::OpCode;
-
-mod chunk;
-mod common;
+use clap::Parser;
+use std::fs;
+use std::io::{Read, Write};
+use std::path::PathBuf;
 mod debug;
-mod value;
 
-pub fn execute() {
-    let mut empty_chunk = chunk::Chunk::init();
-    for i in 1..=257 {
-        if i > 256 {
-            empty_chunk.write_constant(&2566.0, i);
-        } else {
-            empty_chunk.write_constant(&1.0, i);
-        }
+#[derive(Parser)]
+struct Cli {
+    // source file path
+    #[clap(parse(from_os_str), default_value = "")]
+    path: PathBuf,
+}
+
+fn run_file(path: PathBuf) {
+    let mut file = fs::File::open(&path).expect("Unable to read file");
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)
+        .expect("Something went wrong while reading the file.");
+
+    println!("File contents: {:?}", contents);
+    if contents.len() < file.metadata().unwrap().len().try_into().unwrap() {
+        eprintln!("Could not read file: {:?}", path);
+        std::process::exit(74);
     }
+}
 
-    empty_chunk.write_chunk(OpCode::Return as u8, 258);
-    empty_chunk.disassemble_chunk("debug");
+fn prompt(name: &str) -> String {
+    let mut line = String::new();
+    print!("{}", name);
+    std::io::stdout().flush().unwrap();
+    std::io::stdin()
+        .read_line(&mut line)
+        .expect("Error: could not read input");
 
-    println!("{:?}", empty_chunk);
+    return line.trim().to_string();
+}
+
+fn repl() {
+    loop {
+        let input = prompt("> ");
+    }
 }
 
 fn main() {
-    execute();
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use test::Bencher;
-    #[bench]
-    fn bench_create_chunks(b: &mut Bencher) {
-        b.iter(execute);
+    let args = Cli::parse();
+    if args.path.as_os_str().is_empty() {
+        repl();
+    } else {
+        run_file(args.path);
     }
 }

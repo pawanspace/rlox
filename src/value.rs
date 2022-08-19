@@ -2,7 +2,7 @@ use crate::common;
 
 #[derive(Debug)]
 pub(crate) struct ValueArray<'a> {
-    values: Vec<&'a common::Value>,
+    pub values: Vec<&'a common::Value>,
 }
 
 impl<'a> ValueArray<'a> {

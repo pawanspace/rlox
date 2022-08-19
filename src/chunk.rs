@@ -5,8 +5,8 @@ extern crate num;
 
 #[derive(Debug)]
 pub(crate) struct Chunk<'a> {
-    code: Vec<u8>,
-    constants: value::ValueArray<'a>,
+    pub code: Vec<u8>,
+    pub constants: value::ValueArray<'a>,
     lines: Vec<u32>,
 }
 
@@ -32,7 +32,7 @@ impl<'a> Chunk<'a> {
     // version of write_chunk
     pub(crate) fn write_constant(&mut self, value: &'a Value, line: u32) {
         let index = self.add_constant(value);
-        // for any long constant that doesn't fit in u8, we store all bytes
+        // for any index constant that doesn't fit in u8, we store all bytes
         if index <= 255 {
             self.write_chunk(OpCode::Constant as u8, line);
             self.write_chunk(index as u8, line);
@@ -61,11 +61,16 @@ impl<'a> Chunk<'a> {
         }
     }
 
-    fn handle_instruction(&self, instruction: &u8, offset: usize) -> usize {
+    pub fn handle_instruction(&self, instruction: &u8, offset: usize) -> usize {
         let opcode = num::FromPrimitive::from_u8(*instruction);
         match opcode {
-            Some(OpCode::Return) => {
-                debug::debug(format!("opcode: {:?}", OpCode::Return));
+            Some(OpCode::Return)
+            | Some(OpCode::Negate)
+            | Some(OpCode::Add)
+            | Some(OpCode::Subtract)
+            | Some(OpCode::Multiply)
+            | Some(OpCode::Divide) => {
+                debug::debug(format!("opcode: {:?}", opcode.unwrap()));
             }
             Some(OpCode::Constant) => {
                 let constant_index = self.code.get(offset + 1).unwrap();
