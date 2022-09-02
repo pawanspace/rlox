@@ -26,7 +26,7 @@ pub fn execute() {
     empty_chunk.write_constant(&5.6, 260);
     empty_chunk.write_chunk(OpCode::Divide as u8, 261);
     empty_chunk.write_chunk(OpCode::Return as u8, 262);
-    vm.interpret(&empty_chunk);
+    //    vm.interpret(&empty_chunk);
     empty_chunk.disassemble_chunk("debug");
 
     // println!("{:?}", empty_chunk);
