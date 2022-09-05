@@ -29,26 +29,38 @@ fn run_file(path: PathBuf) {
         std::process::exit(74);
     }
     let mut vm = vm::VM::init();
-    vm.interpret(contents.to_string());
+    let chunk = chunk::Chunk::init();
+    vm.interpret(contents.to_string(), &chunk);
 }
 
-fn prompt(name: &str, vm: &mut vm::VM) {
-    let mut line = String::new();
-    print!("{}", name);
-    std::io::stdout().flush().unwrap();
-    std::io::stdin()
-        .read_line(&mut line)
-        .expect("Error: could not read input");
-    vm.interpret(line.to_string());
+struct Repl<'a> {
+    vm: &'a mut vm::VM<'a>,
+}
+
+impl<'a> Repl<'a> {
+    fn init(vm: &'a mut vm::VM<'a>) -> Repl<'a> {
+        Repl { vm }
+    }
+
+    fn prompt(&mut self, name: &str, chunk: &'a chunk::Chunk) {
+        let mut line = String::new();
+        print!("{}", name);
+        std::io::stdout().flush().unwrap();
+        std::io::stdin()
+            .read_line(&mut line)
+            .expect("Error: could not read input");
+        self.vm.interpret(line.to_string(), chunk);
+    }
 }
 
 fn repl() {
     let mut vm = vm::VM::init();
+    let chunk = chunk::Chunk::init();
+    let mut repl = Repl::init(&mut vm);
     loop {
-        prompt("> ", &mut vm);
+        repl.prompt("> ", &chunk);
     }
 }
-
 
 fn main() {
     let args = Cli::parse();

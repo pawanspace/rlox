@@ -1,6 +1,6 @@
-use std::{cmp::Ordering};
+use std::cmp::Ordering;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub(crate) enum TokenType {
     // Single-character tokens.
     LeftParen,
@@ -48,11 +48,11 @@ pub(crate) enum TokenType {
     Eof,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub(crate) struct Token {
     pub token_type: TokenType,
-    start: usize,
-    length: usize,
+    pub start: usize,
+    pub length: usize,
     pub line: i32,
 }
 
@@ -60,7 +60,7 @@ pub(crate) struct Scanner<'s> {
     start: usize,
     current: usize,
     line: i32,
-    chars: &'s Vec<char>,
+    chars: &'s mut Vec<char>,
     total_size: usize,
 }
 
@@ -69,14 +69,23 @@ fn is_alpha(c: char) -> bool {
 }
 
 impl<'s> Scanner<'s> {
-    pub(crate) fn init(start: usize, total_size: usize, source: &'s Vec<char>) -> Scanner<'s> {
+    pub(crate) fn init(start: usize, total_size: usize, source: &'s mut Vec<char>) -> Scanner<'s> {
         Scanner {
             start,
             current: start,
             line: 1,
             total_size,
-            chars: &source,
+            chars: source,
         }
+    }
+
+    pub(crate) fn refresh(&mut self, start: usize, total_size: usize, source: &mut Vec<char>) {
+        self.chars.clear();
+        self.chars.append(source);
+        self.total_size = total_size;
+        self.current = start;
+        self.line = 1;
+        self.start = start
     }
 
     pub(crate) fn scan_token(&mut self) -> Token {

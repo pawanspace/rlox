@@ -2,6 +2,7 @@ use crate::chunk::Chunk;
 use crate::common::{OpCode, Value};
 use crate::compiler;
 use crate::debug;
+use crate::scanner::Scanner;
 extern crate num;
 
 const STACK_MAX: usize = 512;
@@ -148,8 +149,16 @@ impl<'a> VM<'a> {
         self.run()
     }
 
-    pub(crate) fn interpret(&mut self, source: String) -> InterpretResult {
-        compiler::compile(source);
-        InterpretResult::InterpretOk
+    pub(crate) fn interpret(&mut self, source: String, chunk: &'a Chunk<'a>) -> InterpretResult {
+        let mut empty = vec![];
+        let mut scanner = Scanner::init(0, 0, &mut empty);
+        let mut compiler = compiler::Compiler::init(&mut scanner);
+        if !compiler.compile(source, chunk) {
+            return InterpretResult::InterpretCompileError;
+        }
+
+        self.chunk = Some(chunk);
+        self.ip = 0;
+        self.run()
     }
 }
