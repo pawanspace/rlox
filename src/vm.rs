@@ -8,7 +8,7 @@ extern crate num;
 const STACK_MAX: usize = 512;
 
 pub(crate) struct VM<'a> {
-    chunk: Option<&'a Chunk<'a>>,
+    chunk: Option<Box<Chunk<'a>>>,
     ip: i32,
     stack: [Value; STACK_MAX],
     stack_top: usize,
@@ -23,7 +23,7 @@ pub enum InterpretResult {
 macro_rules! READ_BYTE {
     ($self:ident) => {
         *{
-            let c = $self.chunk.unwrap().code.get($self.ip as usize);
+            let c = $self.chunk.as_ref().unwrap().code.get($self.ip as usize);
             $self.ip += 1;
             c.unwrap()
         }
@@ -34,6 +34,7 @@ macro_rules! READ_CONSTANT {
     ($self:ident) => {{
         $self
             .chunk
+            .as_ref()
             .unwrap()
             .constants
             .values
@@ -59,6 +60,7 @@ macro_rules! READ_CONSTANT_LONG {
         let constant_index = usize::from_ne_bytes(constant_index_bytes);
         $self
             .chunk
+            .as_ref()
             .unwrap()
             .constants
             .values
@@ -103,6 +105,7 @@ impl<'a> VM<'a> {
                 println!("\n\n ##### Stack ######");
 
                 self.chunk
+                    .as_ref()
                     .unwrap()
                     .handle_instruction(&instruction, (self.ip - 1) as usize);
             }
@@ -143,20 +146,21 @@ impl<'a> VM<'a> {
         }
     }
 
-    pub(crate) fn interpret_old(&mut self, chunk: &'a Chunk<'a>) -> InterpretResult {
-        self.chunk = Some(chunk);
+    pub(crate) fn interpret_old(&mut self, chunk: Chunk<'a>) -> InterpretResult {
+        self.chunk = Some(Box::new(chunk));
         self.ip = 0;
         self.run()
     }
 
-    pub(crate) fn interpret(&mut self, source: String, chunk: &'a Chunk<'a>) -> InterpretResult {
-        let mut empty = vec![];
-        let mut scanner = Scanner::init(0, 0, &mut empty);
-        let mut compiler = compiler::Compiler::init(&mut scanner);
-        if !compiler.compile(source, chunk) {
+    pub(crate) fn interpret<'m>(&mut self, source: String, chunk: Chunk<'a>) -> InterpretResult {
+        let chunk_on_heap = Box::new(chunk);
+        let chars: Vec<char> = source.chars().collect();
+        let scanner = Scanner::init(0, 0, chars);
+        let mut compiler = compiler::Compiler::init(scanner, chunk_on_heap);
+        let (had_error, chunk) = compiler.compile(source);
+        if had_error {
             return InterpretResult::InterpretCompileError;
         }
-
         self.chunk = Some(chunk);
         self.ip = 0;
         self.run()

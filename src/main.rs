@@ -30,7 +30,7 @@ fn run_file(path: PathBuf) {
     }
     let mut vm = vm::VM::init();
     let chunk = chunk::Chunk::init();
-    vm.interpret(contents.to_string(), &chunk);
+    vm.interpret(contents.to_string(), chunk);
 }
 
 struct Repl<'a> {
@@ -42,23 +42,23 @@ impl<'a> Repl<'a> {
         Repl { vm }
     }
 
-    fn prompt(&mut self, name: &str, chunk: &'a chunk::Chunk) {
+    fn prompt(&mut self, name: &str) {
         let mut line = String::new();
         print!("{}", name);
         std::io::stdout().flush().unwrap();
         std::io::stdin()
             .read_line(&mut line)
             .expect("Error: could not read input");
+        let mut chunk = chunk::Chunk::init();
         self.vm.interpret(line.to_string(), chunk);
     }
 }
 
 fn repl() {
     let mut vm = vm::VM::init();
-    let chunk = chunk::Chunk::init();
     let mut repl = Repl::init(&mut vm);
     loop {
-        repl.prompt("> ", &chunk);
+        repl.prompt("> ");
     }
 }
 

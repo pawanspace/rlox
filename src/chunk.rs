@@ -7,7 +7,7 @@ extern crate num;
 pub(crate) struct Chunk<'a> {
     pub code: Vec<u8>,
     pub constants: value::ValueArray<'a>,
-    lines: Vec<u32>,
+    pub lines: Vec<u32>,
 }
 
 impl<'a> Chunk<'a> {

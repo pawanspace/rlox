@@ -53,14 +53,14 @@ pub(crate) struct Token {
     pub token_type: TokenType,
     pub start: usize,
     pub length: usize,
-    pub line: i32,
+    pub line: u32,
 }
 
-pub(crate) struct Scanner<'s> {
+pub(crate) struct Scanner {
     start: usize,
     current: usize,
-    line: i32,
-    chars: &'s mut Vec<char>,
+    line: u32,
+    chars: Vec<char>,
     total_size: usize,
 }
 
@@ -68,8 +68,8 @@ fn is_alpha(c: char) -> bool {
     c.is_alphabetic() || c == '_'
 }
 
-impl<'s> Scanner<'s> {
-    pub(crate) fn init(start: usize, total_size: usize, source: &'s mut Vec<char>) -> Scanner<'s> {
+impl Scanner {
+    pub(crate) fn init(start: usize, total_size: usize, source: Vec<char>) -> Scanner {
         Scanner {
             start,
             current: start,
@@ -79,9 +79,9 @@ impl<'s> Scanner<'s> {
         }
     }
 
-    pub(crate) fn refresh(&mut self, start: usize, total_size: usize, source: &mut Vec<char>) {
+    pub(crate) fn refresh(&mut self, start: usize, total_size: usize, mut source: Vec<char>) {
         self.chars.clear();
-        self.chars.append(source);
+        self.chars.append(&mut source);
         self.total_size = total_size;
         self.current = start;
         self.line = 1;
