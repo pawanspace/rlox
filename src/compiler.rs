@@ -1,6 +1,21 @@
 use crate::chunk::Chunk;
+use crate::common::{OpCode, Value};
 use crate::scanner::{Scanner, Token, TokenType};
 use crate::value::ValueArray;
+
+enum Precedence {
+    None,
+    Assignment,
+    Or,
+    And,
+    Equality,
+    Comparison,
+    Term,
+    Factor,
+    Unary,
+    Call,
+    Primary,
+}
 
 struct Parser {
     current: Option<Token>,
@@ -9,14 +24,15 @@ struct Parser {
     panic_mode: bool,
 }
 
-pub(crate) struct Compiler<'c> {
+pub(crate) struct Compiler {
     scanner: Scanner,
     parser: Parser,
-    chunk: Box<Chunk<'c>>,
+    chunk: Box<Chunk>,
+    source: String,
 }
 
-impl<'c> Compiler<'c> {
-    pub(crate) fn init(scanner: Scanner, mut chunk: Box<Chunk<'c>>) -> Compiler<'c> {
+impl Compiler {
+    pub(crate) fn init(scanner: Scanner, chunk: Box<Chunk>) -> Compiler {
         let parser = Parser {
             current: None,
             previous: None,
@@ -27,12 +43,14 @@ impl<'c> Compiler<'c> {
             scanner,
             parser,
             chunk,
+            source: "".to_string(),
         }
     }
 
-    pub(crate) fn compile(&mut self, source: String) -> (bool, Box<Chunk<'c>>) {
-        let chars: Vec<char> = source.chars().collect();
-        self.scanner.refresh(0, source.len(), chars);
+    pub(crate) fn compile(&mut self, source: String) -> (bool, Box<Chunk>) {
+        self.source = source;
+        let chars: Vec<char> = self.source.chars().collect();
+        self.scanner.refresh(0, self.source.len(), chars);
         self.advance();
         (
             self.parser.had_error,
@@ -97,4 +115,54 @@ impl<'c> Compiler<'c> {
         self.chunk
             .write_chunk(byte, self.parser.previous.unwrap().line);
     }
+
+    fn emit_bytes(&mut self, byte_1: u8, byte_2: u8) {
+        self.emit_byte(byte_1);
+        self.emit_byte(byte_2);
+    }
+
+    fn end_compiler(&mut self) {
+        self.emit_return()
+    }
+
+    fn emit_return(&mut self) {
+        self.emit_byte(OpCode::Return as u8)
+    }
+
+    fn expression(&mut self) {}
+
+    fn emit_constant(&mut self, value: Value) {
+        self.chunk
+            .write_constant(value, self.parser.previous.unwrap().line)
+    }
+
+    fn str_to_float(&mut self, token: Token) -> f64 {
+        let value = &self.source[token.start..token.start + token.length];
+        value.parse::<f64>().unwrap()
+    }
+
+    fn number(&mut self) {
+        let value: Value = self.str_to_float(self.parser.previous.unwrap());
+        self.emit_constant(value);
+    }
+
+    fn grouping(&mut self) {
+        self.expression();
+        self.consume(TokenType::RightParen, "Expect ')' after expression");
+    }
+
+    fn unary(&mut self) {
+        let operator_type = self.parser.previous.unwrap().token_type;
+
+        // we put expression first because we would first evaluate the operand
+        // then put in on stack then pop it and negate.
+        self.expression();
+
+        match operator_type {
+            TokenType::Minus => self.emit_byte(OpCode::Negate as u8),
+            _ => return,
+        }
+    }
+
+    fn parse_precedence(&mut self, precedence: Precedence) {}
 }

@@ -34,11 +34,11 @@ fn run_file(path: PathBuf) {
 }
 
 struct Repl<'a> {
-    vm: &'a mut vm::VM<'a>,
+    vm: &'a mut vm::VM,
 }
 
 impl<'a> Repl<'a> {
-    fn init(vm: &'a mut vm::VM<'a>) -> Repl<'a> {
+    fn init(vm: &'a mut vm::VM) -> Repl<'a> {
         Repl { vm }
     }
 

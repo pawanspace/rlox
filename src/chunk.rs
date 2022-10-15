@@ -4,14 +4,14 @@ use crate::value::{self, ValueArray};
 extern crate num;
 
 #[derive(Debug)]
-pub(crate) struct Chunk<'a> {
+pub(crate) struct Chunk {
     pub code: Vec<u8>,
-    pub constants: value::ValueArray<'a>,
+    pub constants: value::ValueArray,
     pub lines: Vec<u32>,
 }
 
-impl<'a> Chunk<'a> {
-    pub(crate) fn init() -> Chunk<'a> {
+impl<'a> Chunk {
+    pub(crate) fn init() -> Chunk {
         Chunk {
             code: vec![],
             constants: ValueArray::init(),
@@ -24,13 +24,13 @@ impl<'a> Chunk<'a> {
         self.lines.push(line);
     }
 
-    fn add_constant(&mut self, value: &'a Value) -> usize {
+    pub fn add_constant(&mut self, value: Value) -> usize {
         self.constants.append(value);
         self.constants.count()
     }
 
     // version of write_chunk
-    pub(crate) fn write_constant(&mut self, value: &'a Value, line: u32) {
+    pub(crate) fn write_constant(&mut self, value: Value, line: u32) {
         let index = self.add_constant(value);
         // for any index constant that doesn't fit in u8, we store all bytes
         if index <= 255 {

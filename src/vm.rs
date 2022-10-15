@@ -7,8 +7,8 @@ extern crate num;
 
 const STACK_MAX: usize = 512;
 
-pub(crate) struct VM<'a> {
-    chunk: Option<Box<Chunk<'a>>>,
+pub(crate) struct VM {
+    chunk: Option<Box<Chunk>>,
     ip: i32,
     stack: [Value; STACK_MAX],
     stack_top: usize,
@@ -68,8 +68,8 @@ macro_rules! READ_CONSTANT_LONG {
     }};
 }
 
-impl<'a> VM<'a> {
-    pub(crate) fn init() -> VM<'a> {
+impl VM {
+    pub(crate) fn init() -> VM {
         VM {
             chunk: None,
             ip: -1,
@@ -133,11 +133,11 @@ impl<'a> VM<'a> {
                 }
                 Some(OpCode::Constant) => {
                     let constant = READ_CONSTANT!(self);
-                    self.push(**constant.unwrap());
+                    self.push(*constant.unwrap());
                 }
                 Some(OpCode::ConstantLong) => {
                     let constant = READ_CONSTANT_LONG!(self);
-                    self.push(**constant.unwrap());
+                    self.push(*constant.unwrap());
                 }
                 _ => {
                     return InterpretResult::InterpretOk;
@@ -146,13 +146,13 @@ impl<'a> VM<'a> {
         }
     }
 
-    pub(crate) fn interpret_old(&mut self, chunk: Chunk<'a>) -> InterpretResult {
+    pub(crate) fn interpret_old(&mut self, chunk: Chunk) -> InterpretResult {
         self.chunk = Some(Box::new(chunk));
         self.ip = 0;
         self.run()
     }
 
-    pub(crate) fn interpret<'m>(&mut self, source: String, chunk: Chunk<'a>) -> InterpretResult {
+    pub(crate) fn interpret<'m>(&mut self, source: String, chunk: Chunk) -> InterpretResult {
         let chunk_on_heap = Box::new(chunk);
         let chars: Vec<char> = source.chars().collect();
         let scanner = Scanner::init(0, 0, chars);
