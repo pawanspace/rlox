@@ -140,6 +140,9 @@ impl Compiler {
         let chars: Vec<char> = self.source.chars().collect();
         self.scanner.refresh(0, self.source.len(), chars);
         self.advance();
+        self.expression();
+        self.consume(TokenType::Eof, "Expect end of expression.");
+        self.end_compiler();
         (
             self.parser.had_error,
             Box::new(Chunk {
