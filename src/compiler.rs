@@ -252,12 +252,15 @@ impl Compiler {
         // then put in on stack then pop it and negate.
         self.parse_precedence(Precedence::Unary);
 
-        self.emit_operator(operator_type);
+        match operator_type {
+            TokenType::Minus => self.emit_byte(OpCode::Negate as u8),
+            _ => return,
+        }
     }
 
     fn emit_operator(&mut self, operator_type: TokenType) {
         match operator_type {
-            TokenType::Minus => self.emit_byte(OpCode::Negate as u8),
+            TokenType::Minus => self.emit_byte(OpCode::Subtract as u8),
             TokenType::Plus => self.emit_byte(OpCode::Add as u8),
             TokenType::Star => self.emit_byte(OpCode::Multiply as u8),
             TokenType::Slash => self.emit_byte(OpCode::Divide as u8),
