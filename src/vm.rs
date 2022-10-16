@@ -98,11 +98,11 @@ impl VM {
             let opcode = num::FromPrimitive::from_u8(instruction);
 
             if debug::is_debug() {
-                println!("##### Stack ###### \n");
-                for i in 0..self.stack.len() {
-                    print!("[{:?}]", self.stack[i]);
-                }
-                println!("\n\n ##### Stack ######");
+                // println!("##### Stack ###### \n");
+                // for i in 0..self.stack.len() {
+                //     print!("[{:?}]", self.stack[i]);
+                // }
+                // println!("\n\n ##### Stack ######");
 
                 self.chunk
                     .as_ref()

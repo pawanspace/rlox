@@ -163,9 +163,9 @@ impl Compiler {
             if self.parser.current.unwrap().token_type != TokenType::Error {
                 break;
             }
-        }
 
-        self.error_at_current("@todo some error here")
+            self.error_at_current("@todo some error here")
+        }
     }
 
     fn error_at_current(&mut self, message: &str) {
@@ -213,7 +213,8 @@ impl Compiler {
     }
 
     fn end_compiler(&mut self) {
-        self.emit_return()
+        self.emit_return();
+        self.chunk.disassemble_chunk("Compiler");
     }
 
     fn emit_return(&mut self) {
@@ -298,7 +299,7 @@ impl Compiler {
             self.advance();
             let infix = self
                 .get_rule(self.parser.previous.unwrap().token_type)
-                .prefix;
+                .infix;
             let infix_func = infix.unwrap();
             infix_func(self);
         }
