@@ -340,7 +340,7 @@ impl Scanner {
         if self.is_at_end() {
             return false;
         }
-        if self.chars[self.current + 1] == c {
+        if self.chars[self.current] == c {
             self.advance();
             return true;
         }

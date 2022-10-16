@@ -2,7 +2,6 @@ use crate::common::{OpCode, Value};
 use crate::debug;
 use crate::value::{self, ValueArray};
 extern crate num;
-
 #[derive(Debug)]
 pub(crate) struct Chunk {
     pub code: Vec<u8>,
@@ -69,6 +68,13 @@ impl<'a> Chunk {
             | Some(OpCode::Add)
             | Some(OpCode::Subtract)
             | Some(OpCode::Multiply)
+            | Some(OpCode::False)
+            | Some(OpCode::True)
+            | Some(OpCode::Nil)
+            | Some(OpCode::Not)
+            | Some(OpCode::Greater)
+            | Some(OpCode::Less)
+            | Some(OpCode::Equal)
             | Some(OpCode::Divide) => {
                 debug::debug(format!("opcode: {:?}", opcode.unwrap()));
             }

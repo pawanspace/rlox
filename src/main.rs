@@ -4,6 +4,7 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 
 mod chunk;
+#[macro_use]
 mod common;
 mod compiler;
 mod debug;
@@ -49,7 +50,7 @@ impl<'a> Repl<'a> {
         std::io::stdin()
             .read_line(&mut line)
             .expect("Error: could not read input");
-        let mut chunk = chunk::Chunk::init();
+        let chunk = chunk::Chunk::init();
         self.vm.interpret(line.to_string(), chunk);
     }
 }

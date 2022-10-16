@@ -1,5 +1,4 @@
 use crate::common;
-
 #[derive(Debug)]
 pub(crate) struct ValueArray {
     pub values: Vec<common::Value>,

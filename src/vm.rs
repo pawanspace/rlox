@@ -1,12 +1,12 @@
 use crate::chunk::Chunk;
-use crate::common::{OpCode, Value};
+use crate::common::{Data, OpCode, Value, ValueType};
 use crate::compiler;
 use crate::debug;
 use crate::scanner::Scanner;
 extern crate num;
 
 const STACK_MAX: usize = 512;
-
+#[derive(Debug)]
 pub(crate) struct VM {
     chunk: Option<Box<Chunk>>,
     ip: i32,
@@ -43,10 +43,21 @@ macro_rules! READ_CONSTANT {
 }
 
 macro_rules! BINARY_OP {
-    ($self:ident, $op:tt) => {{
-	let right = $self.pop();
-	let left = $self.pop();
-	$self.push(left $op right);
+    ($self:ident, $op:tt, $valueType:tt) => {{
+        let peek_0 = $self.peek(0);
+        let peek_1 = $self.peek(1);
+        if !IS_NUMBER!(peek_0) || !IS_NUMBER!(peek_1) {
+            $self.runtime_error();
+            return InterpretResult::InterpretRuntimeError;
+        }
+
+        let right_val = $self.pop();
+        let left_val = $self.pop();
+        let right = AS_NUMBER!(right_val);
+        
+        let left = AS_NUMBER!(left_val);
+        let value = left $op right;
+        $self.push($valueType!(value));
     }}
 }
 
@@ -73,7 +84,13 @@ impl VM {
         VM {
             chunk: None,
             ip: -1,
-            stack: [0.0; STACK_MAX],
+            stack: [Value {
+                v_type: ValueType::Nil,
+                data: Data {
+                    number: 0.0,
+                    boolean: false,
+                },
+            }; STACK_MAX],
             stack_top: 0,
         }
     }
@@ -90,6 +107,14 @@ impl VM {
     fn pop(&mut self) -> Value {
         self.stack_top -= 1;
         self.stack[self.stack_top]
+    }
+
+    fn peek(&mut self, distance: usize) -> Value {
+        self.stack[self.stack_top - 1 - distance]
+    }
+
+    fn runtime_error(&self) {
+        println!("ERROR!!! RunTIME!!!!");
     }
 
     fn run(&mut self) -> InterpretResult {
@@ -112,28 +137,62 @@ impl VM {
 
             match opcode {
                 Some(OpCode::Return) => {
-                    println!("{:?}", self.pop());
                     return InterpretResult::InterpretOk;
                 }
                 Some(OpCode::Negate) => {
+                    let value = self.peek(0);
+                    let is_number = !IS_NUMBER!(value);
+                    if !is_number {
+                        self.runtime_error();
+                        return InterpretResult::InterpretRuntimeError;
+                    }
+
                     let local = self.pop();
-                    self.push(-1.0 * local);
+                    let number = AS_NUMBER!(local);
+                    let negate = -1.0 * number;
+                    self.push(NUMBER_VAL!(negate));
                 }
                 Some(OpCode::Add) => {
-                    BINARY_OP!(self, +);
+                    BINARY_OP!(self, +, NUMBER_VAL);
                 }
                 Some(OpCode::Multiply) => {
-                    BINARY_OP!(self, *);
+                    BINARY_OP!(self, *, NUMBER_VAL);
                 }
                 Some(OpCode::Subtract) => {
-                    BINARY_OP!(self, -);
+                    BINARY_OP!(self, -, NUMBER_VAL);
                 }
                 Some(OpCode::Divide) => {
-                    BINARY_OP!(self, /);
+                    BINARY_OP!(self, /, NUMBER_VAL);
+                }
+                Some(OpCode::Greater) => {
+                    BINARY_OP!(self, > , BOOL_VAL);
+                }
+                Some(OpCode::Less) => {
+                    BINARY_OP!(self, < , BOOL_VAL);
+                }
+                Some(OpCode::Equal) => {
+                    let left = self.pop();
+                    let right = self.pop();
+                    let value = self.is_equal(left, right);
+                    self.push(BOOL_VAL!(value));
                 }
                 Some(OpCode::Constant) => {
                     let constant = READ_CONSTANT!(self);
                     self.push(*constant.unwrap());
+                }
+                Some(OpCode::False) => {
+                    self.push(BOOL_VAL!(false));
+                }
+                Some(OpCode::True) => {
+                    self.push(BOOL_VAL!(true));
+                }
+                Some(OpCode::Nil) => {
+                    self.push(NIL_VAL!());
+                }
+                Some(OpCode::Not) => {
+                    let top_val = self.pop();
+                    let value = self.is_falsey(top_val);
+                    self.push(BOOL_VAL!(value));
                 }
                 Some(OpCode::ConstantLong) => {
                     let constant = READ_CONSTANT_LONG!(self);
@@ -144,6 +203,24 @@ impl VM {
                 }
             }
         }
+    }
+
+    fn is_equal(&self, left: Value, right: Value) -> bool {
+        if left.v_type != right.v_type {
+            return false;
+        }
+
+        match left.v_type {
+            ValueType::Bool => return left.data.boolean == right.data.boolean,
+            ValueType::Number => return left.data.number == right.data.number,
+            ValueType::Nil => return true,
+            _ => return false,
+        }
+    }
+
+    // we are treating nil as false
+    fn is_falsey(&self, value: Value) -> bool {
+        IS_NIL!(value) || (IS_BOOL!(value) && !AS_BOOL!(value))
     }
 
     pub(crate) fn interpret_old(&mut self, chunk: Chunk) -> InterpretResult {

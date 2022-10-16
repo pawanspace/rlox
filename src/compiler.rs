@@ -1,11 +1,11 @@
 use crate::chunk::Chunk;
-use crate::common::{OpCode, Value};
+use crate::common::{Data, OpCode, Value, ValueType};
 use crate::scanner::{Scanner, Token, TokenType};
 use crate::value::ValueArray;
 use num_derive::FromPrimitive;
 extern crate num;
 // precedence level lower to higher
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 #[derive(FromPrimitive, Eq, PartialEq)]
 enum Precedence {
@@ -27,6 +27,7 @@ const grouping: Option<ParseFn> = Some(|compiler| compiler.grouping());
 const binary: Option<ParseFn> = Some(|compiler| compiler.binary());
 const unary: Option<ParseFn> = Some(|compiler| compiler.unary());
 const number: Option<ParseFn> = Some(|compiler| compiler.number());
+const literal: Option<ParseFn> = Some(|compiler| compiler.literal());
 
 fn parse_rule(token_type: TokenType) -> ParseRule {
     match token_type {
@@ -35,7 +36,7 @@ fn parse_rule(token_type: TokenType) -> ParseRule {
             infix: noop,
             precedence: Precedence::None,
         },
-        TokenType::Minus => ParseRule {
+        TokenType::Minus | TokenType::Bang => ParseRule {
             prefix: unary,
             infix: binary,
             precedence: Precedence::Term,
@@ -45,6 +46,18 @@ fn parse_rule(token_type: TokenType) -> ParseRule {
             infix: binary,
             precedence: Precedence::Term,
         },
+        TokenType::EqualEqual | TokenType::BangEqual => ParseRule {
+            prefix: noop,
+            infix: binary,
+            precedence: Precedence::Equality,
+        },
+        TokenType::Greater | TokenType::Less | TokenType::GreaterEqual | TokenType::LessEqual => {
+            ParseRule {
+                prefix: noop,
+                infix: binary,
+                precedence: Precedence::Comparison,
+            }
+        }
         TokenType::Star | TokenType::Slash => ParseRule {
             prefix: noop,
             infix: binary,
@@ -55,34 +68,29 @@ fn parse_rule(token_type: TokenType) -> ParseRule {
             infix: noop,
             precedence: Precedence::None,
         },
+        TokenType::False | TokenType::True | TokenType::Nil => ParseRule {
+            prefix: literal,
+            infix: noop,
+            precedence: Precedence::None,
+        },
         TokenType::Comma
         | TokenType::And
         | TokenType::Class
         | TokenType::Else
-        | TokenType::False
         | TokenType::For
         | TokenType::Fun
         | TokenType::If
-        | TokenType::Nil
         | TokenType::Or
         | TokenType::Print
         | TokenType::Return
         | TokenType::Super
         | TokenType::This
-        | TokenType::True
         | TokenType::Var
         | TokenType::While
         | TokenType::Error
         | TokenType::Eof
         | TokenType::Semicolon
-        | TokenType::Bang
-        | TokenType::BangEqual
-        | TokenType::EqualEqual
         | TokenType::Equal
-        | TokenType::Greater
-        | TokenType::GreaterEqual
-        | TokenType::Less
-        | TokenType::LessEqual
         | TokenType::Identifier
         | TokenType::String
         | TokenType::Dot
@@ -212,13 +220,22 @@ impl Compiler {
         self.emit_byte(byte_2);
     }
 
+    fn emit_opcode(&mut self, opcode: OpCode) {
+        self.emit_byte(opcode as u8);
+    }
+
+    fn emit_opcodes(&mut self, opcode_1: OpCode, opcode_2: OpCode) {
+        self.emit_opcode(opcode_1);
+        self.emit_opcode(opcode_2);
+    }
+
     fn end_compiler(&mut self) {
         self.emit_return();
         self.chunk.disassemble_chunk("Compiler");
     }
 
     fn emit_return(&mut self) {
-        self.emit_byte(OpCode::Return as u8)
+        self.emit_opcode(OpCode::Return)
     }
 
     fn expression(&mut self) {
@@ -236,8 +253,8 @@ impl Compiler {
     }
 
     fn number(&mut self) {
-        let value: Value = self.str_to_float(self.parser.previous.unwrap());
-        self.emit_constant(value);
+        let value: f64 = self.str_to_float(self.parser.previous.unwrap());
+        self.emit_constant(NUMBER_VAL!(value));
     }
 
     fn grouping(&mut self) {
@@ -253,17 +270,25 @@ impl Compiler {
         self.parse_precedence(Precedence::Unary);
 
         match operator_type {
-            TokenType::Minus => self.emit_byte(OpCode::Negate as u8),
+            TokenType::Minus => self.emit_opcode(OpCode::Negate),
+            TokenType::Bang => self.emit_opcode(OpCode::Not),
             _ => return,
         }
     }
 
     fn emit_operator(&mut self, operator_type: TokenType) {
         match operator_type {
-            TokenType::Minus => self.emit_byte(OpCode::Subtract as u8),
-            TokenType::Plus => self.emit_byte(OpCode::Add as u8),
-            TokenType::Star => self.emit_byte(OpCode::Multiply as u8),
-            TokenType::Slash => self.emit_byte(OpCode::Divide as u8),
+            TokenType::Minus => self.emit_opcode(OpCode::Subtract),
+            TokenType::Plus => self.emit_opcode(OpCode::Add),
+            TokenType::Star => self.emit_opcode(OpCode::Multiply),
+            TokenType::Slash => self.emit_opcode(OpCode::Divide),
+            TokenType::Greater => self.emit_opcode(OpCode::Greater),
+            TokenType::GreaterEqual => self.emit_opcodes(OpCode::Less, OpCode::Not),
+            TokenType::Less => self.emit_opcode(OpCode::Less),
+            TokenType::LessEqual => self.emit_opcodes(OpCode::Greater, OpCode::Not),
+            TokenType::EqualEqual => self.emit_opcode(OpCode::Equal),
+            TokenType::BangEqual => self.emit_opcodes(OpCode::Equal, OpCode::Not),
+
             _ => return,
         }
     }
@@ -275,9 +300,19 @@ impl Compiler {
     fn binary(&mut self) {
         let operator_type = self.parser.previous.unwrap().token_type;
         let rule = self.get_rule(operator_type);
-        let next_op: Precedence = num::FromPrimitive::from_u8((rule.precedence as u8) + 1).unwrap();
+        let next_op: Precedence = num::FromPrimitive::from_u8((rule.precedence) as u8 + 1).unwrap();
         self.parse_precedence(next_op);
         self.emit_operator(operator_type);
+    }
+
+    fn literal(&mut self) {
+        let token_type = self.parser.previous.unwrap().token_type;
+        match token_type {
+            TokenType::False => self.emit_opcode(OpCode::False),
+            TokenType::Nil => self.emit_opcode(OpCode::Nil),
+            TokenType::True => self.emit_opcode(OpCode::True),
+            _ => println!("Unknown type: {:?} ", token_type),
+        }
     }
 
     fn parse_precedence(&mut self, precedence: Precedence) {
