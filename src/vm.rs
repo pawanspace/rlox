@@ -53,11 +53,7 @@ macro_rules! BINARY_OP {
 
         let right_val = $self.pop();
         let left_val = $self.pop();
-        let right = AS_NUMBER!(right_val);
-        
-        let left = AS_NUMBER!(left_val);
-        let value = left $op right;
-        $self.push($valueType!(value));
+        $self.push($valueType!(AS_NUMBER!(right_val) $op AS_NUMBER!(right_val)));
     }}
 }
 
@@ -87,7 +83,6 @@ impl VM {
             stack: [Value {
                 v_type: ValueType::Nil,
                 data: Data {
-                    number: 0.0,
                     boolean: false,
                 },
             }; STACK_MAX],
@@ -146,11 +141,8 @@ impl VM {
                         self.runtime_error();
                         return InterpretResult::InterpretRuntimeError;
                     }
-
-                    let local = self.pop();
-                    let number = AS_NUMBER!(local);
-                    let negate = -1.0 * number;
-                    self.push(NUMBER_VAL!(negate));
+                    let pop_val = self.pop();
+                    self.push(NUMBER_VAL!(-1.0 * AS_NUMBER!(pop_val)));
                 }
                 Some(OpCode::Add) => {
                     BINARY_OP!(self, +, NUMBER_VAL);
@@ -173,8 +165,7 @@ impl VM {
                 Some(OpCode::Equal) => {
                     let left = self.pop();
                     let right = self.pop();
-                    let value = self.is_equal(left, right);
-                    self.push(BOOL_VAL!(value));
+                    self.push(BOOL_VAL!(self.is_equal(left, right)));
                 }
                 Some(OpCode::Constant) => {
                     let constant = READ_CONSTANT!(self);
@@ -190,9 +181,8 @@ impl VM {
                     self.push(NIL_VAL!());
                 }
                 Some(OpCode::Not) => {
-                    let top_val = self.pop();
-                    let value = self.is_falsey(top_val);
-                    self.push(BOOL_VAL!(value));
+                    let value = self.pop();
+                    self.push(BOOL_VAL!(self.is_falsey(value)));
                 }
                 Some(OpCode::ConstantLong) => {
                     let constant = READ_CONSTANT_LONG!(self);
@@ -209,13 +199,15 @@ impl VM {
         if left.v_type != right.v_type {
             return false;
         }
-
-        match left.v_type {
-            ValueType::Bool => return left.data.boolean == right.data.boolean,
-            ValueType::Number => return left.data.number == right.data.number,
-            ValueType::Nil => return true,
-            _ => return false,
+        unsafe {
+            match left.v_type {
+                ValueType::Bool =>  left.data.boolean == right.data.boolean,
+                ValueType::Number =>  left.data.number == right.data.number,
+                ValueType::Nil => true,
+                _ => false,
+            }
         }
+
     }
 
     // we are treating nil as false

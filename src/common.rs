@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter, write};
 use num_derive::FromPrimitive;
 #[derive(Debug)]
 #[repr(u8)]
@@ -27,14 +28,24 @@ pub enum ValueType {
     Bool,
     Nil,
     Number,
+    Obj,
 }
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct Data {
+#[derive(Copy, Clone)]
+pub union Data {
     pub boolean: bool,
     pub number: f64,
 }
+
+impl Debug for Data {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        unsafe {
+            write!(f, "(boolean: {}, number: {})", self.boolean, self.number)
+        }
+    }
+}
+
 
 #[derive(Debug, Copy, Clone)]
 pub struct Value {
@@ -44,12 +55,11 @@ pub struct Value {
 
 #[macro_export]
 macro_rules! BOOL_VAL {
-    ($value:ident) => {{
+    ($value:expr) => {{
         Value {
             v_type: ValueType::Bool,
             data: Data {
                 boolean: $value,
-                number: 0.0,
             },
         }
     }};
@@ -62,7 +72,6 @@ macro_rules! NIL_VAL {
             v_type: ValueType::Nil,
             data: Data {
                 number: 0.0,
-                boolean: false,
             },
         }
     }};
@@ -70,12 +79,11 @@ macro_rules! NIL_VAL {
 
 #[macro_export]
 macro_rules! NUMBER_VAL {
-    ($value:ident) => {{
+    ($value:expr) => {{
         Value {
             v_type: ValueType::Number,
             data: Data {
                 number: $value,
-                boolean: false,
             },
         }
     }};
@@ -83,35 +91,39 @@ macro_rules! NUMBER_VAL {
 
 #[macro_export]
 macro_rules! AS_BOOL {
-    ($value:ident) => {{
-        $value.data.boolean
+    ($value:expr) => {{
+        unsafe {
+            $value.data.boolean
+        }
     }};
 }
 
 #[macro_export]
 macro_rules! AS_NUMBER {
-    ($value:ident) => {{
-        $value.data.number
+    ($value:expr) => {{
+        unsafe {
+            $value.data.number
+        }
     }};
 }
 
 #[macro_export]
 macro_rules! IS_BOOL {
-    ($value:ident) => {{
+    ($value:expr) => {{
         $value.v_type == ValueType::Bool
     }};
 }
 
 #[macro_export]
 macro_rules! IS_NUMBER {
-    ($value:ident) => {{
+    ($value:expr) => {{
         $value.v_type == ValueType::Number
     }};
 }
 
 #[macro_export]
 macro_rules! IS_NIL {
-    ($value:ident) => {{
+    ($value:expr) => {{
         $value.v_type == ValueType::Nil
     }};
 }
