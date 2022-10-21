@@ -1,6 +1,6 @@
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug};
 use num_derive::FromPrimitive;
-use crate::common::Obj::Str;
+
 
 #[derive(Debug)]
 #[repr(u8)]
@@ -57,11 +57,11 @@ impl Value {
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
-        if matches!(self, other) {
-           return match self {
-                Value::Boolean(_) =>  Into::<bool>::into(self.clone()) == Into::<bool>::into(other.clone()),
-                Value::Number(_) => Into::<bool>::into(self.clone()) == Into::<bool>::into(other.clone()),
-                Value::Missing => true,
+        if matches!(self, _other) {
+           return match (self, other) {
+               (Value::Boolean(l), Value::Boolean(r)) =>  l == r,
+               (Value::Number(l), Value::Number(r))  => l == r,
+               (Value::Missing, Value::Missing)  => true,
                 _ => false,
             }
         }

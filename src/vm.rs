@@ -52,7 +52,7 @@ macro_rules! BINARY_OP {
         }
 
         let right_val = $self.pop();
-        let left_val = $self.pop();
+        let _left_val = $self.pop();
         $self.push(Value::from(Into::<$t_type>::into(right_val.clone()) $op Into::<$t_type>::into(right_val.clone())));
     }}
 }
@@ -79,7 +79,7 @@ impl VM {
     pub(crate) fn init() -> VM {
         let mut local_stack = Vec::with_capacity(STACK_MAX);
 
-        for i in 0..STACK_MAX {
+        for _i in 0..STACK_MAX {
             local_stack.push(None);
         }
 
