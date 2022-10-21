@@ -1,9 +1,11 @@
-use std::fmt::{Debug, Formatter, write};
+use std::fmt::{Debug, Formatter};
 use num_derive::FromPrimitive;
+use crate::common::Obj::Str;
+
 #[derive(Debug)]
 #[repr(u8)]
 #[derive(FromPrimitive)]
-pub enum OpCode {
+pub(crate) enum OpCode {
     Return = 1,
     Constant = 2,
     ConstantLong = 3,
@@ -21,109 +23,139 @@ pub enum OpCode {
     Less = 15,
 }
 
-#[derive(Debug, PartialEq)]
-#[repr(u8)]
-#[derive(FromPrimitive, Copy, Clone)]
-pub enum ValueType {
-    Bool,
-    Nil,
-    Number,
-    Obj,
+#[derive(Debug, Clone)]
+pub(crate) enum Value {
+    Boolean(bool),
+    Number(f64),
+    Obj(Box<Obj>),
+    Missing
 }
 
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub union Data {
-    pub boolean: bool,
-    pub number: f64,
+impl Value {
+    #[inline]
+    pub fn is_boolean(&self) -> bool {
+        matches!(self, Value::Boolean(_))
+    }
+
+    #[inline]
+    pub fn is_missing(&self) -> bool {
+        matches!(self, Value::Missing)
+    }
+
+
+    #[inline]
+    pub fn is_number(&self) -> bool {
+        matches!(self, Value::Number(_))
+    }
+
+    #[inline]
+    pub fn is_obj(&self) -> bool {
+        matches!(self, Value::Obj(_))
+    }
 }
 
-impl Debug for Data {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        unsafe {
-            write!(f, "(boolean: {}, number: {})", self.boolean, self.number)
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        if matches!(self, other) {
+           return match self {
+                Value::Boolean(_) =>  Into::<bool>::into(self.clone()) == Into::<bool>::into(other.clone()),
+                Value::Number(_) => Into::<bool>::into(self.clone()) == Into::<bool>::into(other.clone()),
+                Value::Missing => true,
+                _ => false,
+            }
+        }
+        false
+    }
+}
+
+impl From<bool> for Value {
+    fn from(value: bool) -> Self {
+        Value::Boolean(value)
+    }
+}
+
+impl From<f64> for Value {
+    fn from(value: f64) -> Self {
+        Value::Number(value)
+    }
+}
+
+impl From<Box<Obj>> for Value {
+    fn from(value: Box<Obj>) -> Self {
+        Value::Obj(value)
+    }
+}
+
+impl Into<bool> for Value {
+    fn into(self) -> bool {
+        match self {
+            Value::Boolean(value) => value,
+            //@todo @pawanc check if it should be false this can be wrong in most cases
+            // may be we should throw error
+            _ => false
+        }
+    }
+}
+
+impl Into<f64> for Value {
+    fn into(self) -> f64 {
+        match self {
+            Value::Number(value) => value,
+            //@todo @pawanc check if it should be false this can be wrong in most cases
+            // may be we should throw error
+            _ => 0.0
+        }
+    }
+}
+
+impl Into<Box<Obj>> for Value {
+    fn into(self) -> Box<Obj> {
+        match self {
+            Value::Obj(value) => value,
+            //@todo @pawanc check if it should be false this can be wrong in most cases
+            // may be we should throw error
+            _ => Box::new(Obj::Nil)
         }
     }
 }
 
 
-#[derive(Debug, Copy, Clone)]
-pub struct Value {
-    pub v_type: ValueType,
-    pub data: Data,
+#[derive(Debug, Clone)]
+pub(crate) enum Obj {
+    Str(String),
+    Nil
 }
 
-#[macro_export]
-macro_rules! BOOL_VAL {
-    ($value:expr) => {{
-        Value {
-            v_type: ValueType::Bool,
-            data: Data {
-                boolean: $value,
-            },
+
+
+impl Obj {
+    #[inline]
+    pub fn is_string(&self) -> bool {
+        matches!(self, Obj::Str(_))
+    }
+
+    #[inline]
+    pub fn is_nil(&self) -> bool {
+        matches!(self, Obj::Nil)
+    }
+}
+
+
+impl From<String> for Obj {
+    fn from(value: String) -> Self {
+        Obj::Str(value)
+    }
+}
+
+impl Into<String> for Obj {
+    fn into(self) -> String {
+        match self {
+            Obj::Str(value) => value,
+            //@todo @pawanc check if it should be false this can be wrong in most cases
+            // may be we should throw error
+            _ => String::new()
         }
-    }};
+    }
 }
 
-#[macro_export]
-macro_rules! NIL_VAL {
-    () => {{
-        Value {
-            v_type: ValueType::Nil,
-            data: Data {
-                number: 0.0,
-            },
-        }
-    }};
-}
-
-#[macro_export]
-macro_rules! NUMBER_VAL {
-    ($value:expr) => {{
-        Value {
-            v_type: ValueType::Number,
-            data: Data {
-                number: $value,
-            },
-        }
-    }};
-}
-
-#[macro_export]
-macro_rules! AS_BOOL {
-    ($value:expr) => {{
-        unsafe {
-            $value.data.boolean
-        }
-    }};
-}
-
-#[macro_export]
-macro_rules! AS_NUMBER {
-    ($value:expr) => {{
-        unsafe {
-            $value.data.number
-        }
-    }};
-}
-
-#[macro_export]
-macro_rules! IS_BOOL {
-    ($value:expr) => {{
-        $value.v_type == ValueType::Bool
-    }};
-}
-
-#[macro_export]
-macro_rules! IS_NUMBER {
-    ($value:expr) => {{
-        $value.v_type == ValueType::Number
-    }};
-}
-
-#[macro_export]
-macro_rules! IS_NIL {
-    ($value:expr) => {{
-        $value.v_type == ValueType::Nil
-    }};
-}

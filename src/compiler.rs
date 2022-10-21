@@ -1,5 +1,5 @@
 use crate::chunk::Chunk;
-use crate::common::{Data, OpCode, Value, ValueType};
+use crate::common::{OpCode, Value};
 use crate::scanner::{Scanner, Token, TokenType};
 use crate::value::ValueArray;
 use num_derive::FromPrimitive;
@@ -254,7 +254,7 @@ impl Compiler {
 
     fn number(&mut self) {
         let value: f64 = self.str_to_float(self.parser.previous.unwrap());
-        self.emit_constant(NUMBER_VAL!(value));
+        self.emit_constant(Value::from(value));
     }
 
     fn grouping(&mut self) {

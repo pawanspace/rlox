@@ -16,7 +16,7 @@ impl ValueArray {
     pub(crate) fn get(&self, index: usize) -> common::Value {
         // TODO: I think unwrapping here is kind of unsafe so I should
         // use better approach to handle all the unwraps
-        *self.values.get(index).unwrap()
+        (*self.values.get(index).unwrap()).clone()
     }
 
     pub(crate) fn count(&self) -> usize {

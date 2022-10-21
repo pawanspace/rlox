@@ -1,5 +1,5 @@
 use crate::chunk::Chunk;
-use crate::common::{Data, OpCode, Value, ValueType};
+use crate::common::{OpCode, Value};
 use crate::compiler;
 use crate::debug;
 use crate::scanner::Scanner;
@@ -10,7 +10,7 @@ const STACK_MAX: usize = 512;
 pub(crate) struct VM {
     chunk: Option<Box<Chunk>>,
     ip: i32,
-    stack: [Value; STACK_MAX],
+    stack: Vec<Option<Value>>,
     stack_top: usize,
 }
 
@@ -43,17 +43,17 @@ macro_rules! READ_CONSTANT {
 }
 
 macro_rules! BINARY_OP {
-    ($self:ident, $op:tt, $valueType:tt) => {{
+    ($self:ident, $op:tt, $t_type:ty) => {{
         let peek_0 = $self.peek(0);
         let peek_1 = $self.peek(1);
-        if !IS_NUMBER!(peek_0) || !IS_NUMBER!(peek_1) {
+        if !peek_0.is_number() || !peek_1.is_number() {
             $self.runtime_error();
             return InterpretResult::InterpretRuntimeError;
         }
 
         let right_val = $self.pop();
         let left_val = $self.pop();
-        $self.push($valueType!(AS_NUMBER!(right_val) $op AS_NUMBER!(right_val)));
+        $self.push(Value::from(Into::<$t_type>::into(right_val.clone()) $op Into::<$t_type>::into(right_val.clone())));
     }}
 }
 
@@ -77,15 +77,17 @@ macro_rules! READ_CONSTANT_LONG {
 
 impl VM {
     pub(crate) fn init() -> VM {
+        let mut local_stack = Vec::with_capacity(STACK_MAX);
+
+        for i in 0..STACK_MAX {
+            local_stack.push(None);
+        }
+
+
         VM {
             chunk: None,
             ip: -1,
-            stack: [Value {
-                v_type: ValueType::Nil,
-                data: Data {
-                    boolean: false,
-                },
-            }; STACK_MAX],
+            stack: local_stack,
             stack_top: 0,
         }
     }
@@ -95,17 +97,17 @@ impl VM {
     }
 
     fn push(&mut self, value: Value) {
-        self.stack[self.stack_top] = value;
+        self.stack[self.stack_top] = Option::Some(value);
         self.stack_top += 1;
     }
 
     fn pop(&mut self) -> Value {
         self.stack_top -= 1;
-        self.stack[self.stack_top]
+        self.stack[self.stack_top].as_ref().unwrap().clone()
     }
 
     fn peek(&mut self, distance: usize) -> Value {
-        self.stack[self.stack_top - 1 - distance]
+        self.stack[self.stack_top - 1 - distance].as_ref().unwrap().clone()
     }
 
     fn runtime_error(&self) {
@@ -136,57 +138,56 @@ impl VM {
                 }
                 Some(OpCode::Negate) => {
                     let value = self.peek(0);
-                    let is_number = !IS_NUMBER!(value);
-                    if !is_number {
+                    if !value.is_number() {
                         self.runtime_error();
                         return InterpretResult::InterpretRuntimeError;
                     }
                     let pop_val = self.pop();
-                    self.push(NUMBER_VAL!(-1.0 * AS_NUMBER!(pop_val)));
+                    self.push(Value::from(-1.0 * Into::<f64>::into(pop_val)));
                 }
                 Some(OpCode::Add) => {
-                    BINARY_OP!(self, +, NUMBER_VAL);
+                    BINARY_OP!(self, +, f64);
                 }
                 Some(OpCode::Multiply) => {
-                    BINARY_OP!(self, *, NUMBER_VAL);
+                    BINARY_OP!(self, *, f64);
                 }
                 Some(OpCode::Subtract) => {
-                    BINARY_OP!(self, -, NUMBER_VAL);
+                    BINARY_OP!(self, -, f64);
                 }
                 Some(OpCode::Divide) => {
-                    BINARY_OP!(self, /, NUMBER_VAL);
+                    BINARY_OP!(self, /, f64);
                 }
                 Some(OpCode::Greater) => {
-                    BINARY_OP!(self, > , BOOL_VAL);
+                    BINARY_OP!(self, >, bool);
                 }
                 Some(OpCode::Less) => {
-                    BINARY_OP!(self, < , BOOL_VAL);
+                    BINARY_OP!(self, <, bool);
                 }
                 Some(OpCode::Equal) => {
                     let left = self.pop();
                     let right = self.pop();
-                    self.push(BOOL_VAL!(self.is_equal(left, right)));
+                    self.push(Value::from(self.is_equal(left, right)));
                 }
                 Some(OpCode::Constant) => {
                     let constant = READ_CONSTANT!(self);
-                    self.push(*constant.unwrap());
+                    self.push((*constant.unwrap()).clone());
                 }
                 Some(OpCode::False) => {
-                    self.push(BOOL_VAL!(false));
+                    self.push(Value::from(false));
                 }
                 Some(OpCode::True) => {
-                    self.push(BOOL_VAL!(true));
+                    self.push(Value::from(true));
                 }
                 Some(OpCode::Nil) => {
-                    self.push(NIL_VAL!());
+                    self.push(Value::Missing);
                 }
                 Some(OpCode::Not) => {
                     let value = self.pop();
-                    self.push(BOOL_VAL!(self.is_falsey(value)));
+                    self.push(Value::from(self.is_falsey(value)));
                 }
                 Some(OpCode::ConstantLong) => {
                     let constant = READ_CONSTANT_LONG!(self);
-                    self.push(*constant.unwrap());
+                    self.push((*constant.unwrap()).clone());
                 }
                 _ => {
                     return InterpretResult::InterpretOk;
@@ -196,23 +197,12 @@ impl VM {
     }
 
     fn is_equal(&self, left: Value, right: Value) -> bool {
-        if left.v_type != right.v_type {
-            return false;
-        }
-        unsafe {
-            match left.v_type {
-                ValueType::Bool =>  left.data.boolean == right.data.boolean,
-                ValueType::Number =>  left.data.number == right.data.number,
-                ValueType::Nil => true,
-                _ => false,
-            }
-        }
-
+      left == right
     }
 
     // we are treating nil as false
     fn is_falsey(&self, value: Value) -> bool {
-        IS_NIL!(value) || (IS_BOOL!(value) && !AS_BOOL!(value))
+        value.is_missing() || (value.is_boolean() && !Into::<bool>::into(value))
     }
 
     pub(crate) fn interpret_old(&mut self, chunk: Chunk) -> InterpretResult {
