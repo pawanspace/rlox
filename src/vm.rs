@@ -1,11 +1,13 @@
 use crate::chunk::Chunk;
-use crate::common::{OpCode, Value};
-use crate::compiler;
+use crate::common::{Obj, OpCode, Value};
+use crate::{compiler, memory};
 use crate::debug;
 use crate::scanner::Scanner;
+
 extern crate num;
 
 const STACK_MAX: usize = 512;
+
 #[derive(Debug)]
 pub(crate) struct VM {
     chunk: Option<Box<Chunk>>,
@@ -52,8 +54,8 @@ macro_rules! BINARY_OP {
         }
 
         let right_val = $self.pop();
-        let _left_val = $self.pop();
-        $self.push(Value::from(Into::<$t_type>::into(right_val.clone()) $op Into::<$t_type>::into(right_val.clone())));
+        let left_val = $self.pop();
+        $self.push(Value::from(Into::<$t_type>::into(left_val.clone()) $op Into::<$t_type>::into(right_val.clone())));
     }}
 }
 
@@ -118,13 +120,12 @@ impl VM {
         loop {
             let instruction = READ_BYTE!(self);
             let opcode = num::FromPrimitive::from_u8(instruction);
-
             if debug::is_debug() {
-                // println!("##### Stack ###### \n");
-                // for i in 0..self.stack.len() {
-                //     print!("[{:?}]", self.stack[i]);
-                // }
-                // println!("\n\n ##### Stack ######");
+                println!("##### Stack[Start] ###### \n");
+                for i in 0..self.stack.len() {
+                    print!("[{:?}] ", self.stack[i]);
+                }
+                println!("\n\n ##### Stack[End] ######");
 
                 self.chunk
                     .as_ref()
@@ -146,7 +147,25 @@ impl VM {
                     self.push(Value::from(-1.0 * Into::<f64>::into(pop_val)));
                 }
                 Some(OpCode::Add) => {
-                    BINARY_OP!(self, +, f64);
+                    let value = self.peek(0);
+                    match value {
+                        Value::Obj(ptr1) => {
+                            if value.is_obj_string() {
+                                if self.peek(1).is_obj_string() {
+                                    let combined = self.concat();
+                                    self.push(combined);
+                                }
+                            } else {
+                                self.runtime_error();
+                                return InterpretResult::InterpretRuntimeError;
+                            }
+                        }
+                        Value::Number(value) => BINARY_OP!(self, +, f64),
+                        _ => {
+                            self.runtime_error();
+                            return InterpretResult::InterpretOk;
+                        }
+                    }
                 }
                 Some(OpCode::Multiply) => {
                     BINARY_OP!(self, *, f64);
@@ -197,12 +216,34 @@ impl VM {
     }
 
     fn is_equal(&self, left: Value, right: Value) -> bool {
-      left == right
+        left == right
     }
 
     // we are treating nil as false
     fn is_falsey(&self, value: Value) -> bool {
         value.is_missing() || (value.is_boolean() && !Into::<bool>::into(value))
+    }
+
+    fn concat(&mut self) -> Value {
+        let first = self.pop();
+        let second = self.pop();
+        let obj1 = Into::<*mut Obj>::into(first);
+        let obj2 = Into::<*mut Obj>::into(second);
+
+        let new_ptr1 = memory::allocate::<Obj>();
+        let new_ptr2 = memory::allocate::<Obj>();
+        memory::copy(obj1, new_ptr1);
+        memory::copy(obj2, new_ptr2);
+
+        let val1 = memory::get(new_ptr1);
+        let str1 = Into::<String>::into(val1);
+        let val2 = memory::get(new_ptr2);
+        let str2 = Into::<String>::into(val2);
+
+        let combined = [str2, str1].join("");
+        let ptr = memory::allocate::<Obj>();
+        memory::add::<Obj>(ptr, Obj::from(combined));
+        Value::from(ptr)
     }
 
     pub(crate) fn interpret_old(&mut self, chunk: Chunk) -> InterpretResult {

@@ -1,8 +1,10 @@
+use crate::memory;
 use crate::chunk::Chunk;
-use crate::common::{OpCode, Value};
+use crate::common::{Obj, OpCode, Value};
 use crate::scanner::{Scanner, Token, TokenType};
 use crate::value::ValueArray;
 use num_derive::FromPrimitive;
+
 extern crate num;
 // precedence level lower to higher
 #[derive(Debug, Clone, Copy)]
@@ -28,6 +30,7 @@ const binary: Option<ParseFn> = Some(|compiler| compiler.binary());
 const unary: Option<ParseFn> = Some(|compiler| compiler.unary());
 const number: Option<ParseFn> = Some(|compiler| compiler.number());
 const literal: Option<ParseFn> = Some(|compiler| compiler.literal());
+const string: Option<ParseFn> = Some(|compiler| compiler.string());
 
 fn parse_rule(token_type: TokenType) -> ParseRule {
     match token_type {
@@ -70,6 +73,11 @@ fn parse_rule(token_type: TokenType) -> ParseRule {
         },
         TokenType::False | TokenType::True | TokenType::Nil => ParseRule {
             prefix: literal,
+            infix: noop,
+            precedence: Precedence::None,
+        },
+        TokenType::String => ParseRule {
+            prefix: string,
             infix: noop,
             precedence: Precedence::None,
         },
@@ -231,7 +239,7 @@ impl Compiler {
 
     fn end_compiler(&mut self) {
         self.emit_return();
-        self.chunk.disassemble_chunk("Compiler");
+        //self.chunk.disassemble_chunk("Compiler");
     }
 
     fn emit_return(&mut self) {
@@ -255,6 +263,16 @@ impl Compiler {
     fn number(&mut self) {
         let value: f64 = self.str_to_float(self.parser.previous.unwrap());
         self.emit_constant(Value::from(value));
+    }
+
+    fn string(&mut self) {
+            let token = self.parser.previous.unwrap();
+            let str = &self.source[token.start..token.start + token.length];
+            let obj_string =  Obj::from(str.to_string());
+            let ptr = memory::allocate::<Obj>();
+            memory::add(ptr, obj_string);
+            let value = Value::from(ptr);
+            self.emit_constant(value);
     }
 
     fn grouping(&mut self) {

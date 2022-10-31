@@ -1,5 +1,5 @@
 use clap::Parser;
-use std::fs;
+use std::{env, fs};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
@@ -11,6 +11,7 @@ mod debug;
 mod scanner;
 mod value;
 mod vm;
+mod memory;
 
 #[derive(Parser)]
 struct Cli {
@@ -64,6 +65,7 @@ fn repl() {
 }
 
 fn main() {
+    env::set_var("RUST_BACKTRACE", "1");
     let args = Cli::parse();
     if args.path.as_os_str().is_empty() {
         repl();

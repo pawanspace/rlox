@@ -1,5 +1,5 @@
-use crate::common::{OpCode, Value};
-use crate::debug;
+use crate::common::{Obj, OpCode, Value};
+use crate::{debug, memory};
 use crate::value::{self, ValueArray};
 extern crate num;
 #[derive(Debug)]
@@ -45,15 +45,15 @@ impl<'a> Chunk {
     }
 
     pub(crate) fn disassemble_chunk(&self, name: &str) {
-        debug::debug(format!("=== {} === ", name));
+        debug::info(format!("=== {} === ", name));
         let mut offset: usize = 0;
         while offset < self.code.len() {
-            debug::debug(format!("{:04}", offset));
+            debug::info(format!("{:04}", offset));
             // if its on same line
             if offset > 0 && self.lines.get(offset) == self.lines.get(offset - 1) {
-                debug::debug(" | ".to_string());
+                debug::info(" | ".to_string());
             } else {
-                debug::debug(format!("Line: {}", self.lines.get(offset).unwrap()));
+                debug::info(format!("Line: {}", self.lines.get(offset).unwrap()));
             }
             let instruction = self.code.get(offset).unwrap();
             offset = self.handle_instruction(instruction, offset);
@@ -76,7 +76,7 @@ impl<'a> Chunk {
             | Some(OpCode::Less)
             | Some(OpCode::Equal)
             | Some(OpCode::Divide) => {
-                debug::debug(format!("opcode: {:?}", opcode.unwrap()));
+                debug::debug(format!("opcode: {:?}", opcode.unwrap()), true);
             }
             Some(OpCode::Constant) => {
                 let constant_index = self.code.get(offset + 1).unwrap();
@@ -96,19 +96,17 @@ impl<'a> Chunk {
                 return offset + 9;
             }
             _ => {
-                debug::debug("Unknown instruction".to_string());
+                debug::info("Unknown instruction".to_string());
             }
         }
         offset + 1
     }
 
     fn print_debug_info(&self, opcode: OpCode, constant_index: usize) {
-        debug::debug(format!("opcode: {:?}", opcode));
-        debug::debug(format!("constant index: {}", constant_index));
+        debug::info(format!("opcode: {:?}", opcode));
+        debug::info(format!("constant index: {}", constant_index));
         //TODO: I am not sure if converting u8 to size here is fine or not
-        debug::debug(format!(
-            "constant value: {:?}",
-            self.constants.get(constant_index as usize)
-        ));
+        let value = self.constants.get(constant_index as usize);
+        debug::print_value(value, true);
     }
 }

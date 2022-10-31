@@ -1,5 +1,6 @@
 use std::fmt::{Debug};
 use num_derive::FromPrimitive;
+use Obj::Nil;
 
 
 #[derive(Debug)]
@@ -27,7 +28,7 @@ pub(crate) enum OpCode {
 pub(crate) enum Value {
     Boolean(bool),
     Number(f64),
-    Obj(Box<Obj>),
+    Obj(*mut Obj),
     Missing
 }
 
@@ -51,6 +52,18 @@ impl Value {
     #[inline]
     pub fn is_obj(&self) -> bool {
         matches!(self, Value::Obj(_))
+    }
+
+    #[inline]
+    pub fn is_obj_string(&self) -> bool {
+        return match self {
+            (Value::Obj(ptr))  => {
+                unsafe {
+                    (**ptr).is_string()
+                }
+            },
+            _ => false
+        }
     }
 }
 
@@ -81,8 +94,8 @@ impl From<f64> for Value {
     }
 }
 
-impl From<Box<Obj>> for Value {
-    fn from(value: Box<Obj>) -> Self {
+impl From<*mut Obj> for Value {
+    fn from(value: *mut Obj) -> Self {
         Value::Obj(value)
     }
 }
@@ -109,13 +122,13 @@ impl Into<f64> for Value {
     }
 }
 
-impl Into<Box<Obj>> for Value {
-    fn into(self) -> Box<Obj> {
+impl Into<*mut Obj> for Value {
+    fn into(self) -> *mut Obj {
         match self {
             Value::Obj(value) => value,
             //@todo @pawanc check if it should be false this can be wrong in most cases
             // may be we should throw error
-            _ => Box::new(Obj::Nil)
+            _ => panic!("Unexpected error")
         }
     }
 }
