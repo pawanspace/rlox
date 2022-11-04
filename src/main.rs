@@ -1,8 +1,8 @@
 use clap::Parser;
-use std::{env, fs};
+use std::{env, fs, mem};
+use std::alloc::Layout;
 use std::io::{Read, Write};
 use std::path::PathBuf;
-
 mod chunk;
 #[macro_use]
 mod common;
@@ -12,7 +12,6 @@ mod scanner;
 mod value;
 mod vm;
 mod memory;
-
 #[derive(Parser)]
 struct Cli {
     // source file path

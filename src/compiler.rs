@@ -1,6 +1,8 @@
+use std::mem;
+use std::str::Chars;
 use crate::memory;
 use crate::chunk::Chunk;
-use crate::common::{Obj, OpCode, Value};
+use crate::common::{FatPointer, Obj, OpCode, Value};
 use crate::scanner::{Scanner, Token, TokenType};
 use crate::value::ValueArray;
 use num_derive::FromPrimitive;
@@ -266,13 +268,15 @@ impl Compiler {
     }
 
     fn string(&mut self) {
-            let token = self.parser.previous.unwrap();
-            let str = &self.source[token.start..token.start + token.length];
-            let obj_string =  Obj::from(str.to_string());
-            let ptr = memory::allocate::<Obj>();
-            memory::add(ptr, obj_string);
-            let value = Value::from(ptr);
-            self.emit_constant(value);
+        let mut token = self.parser.previous.unwrap();
+        let mut str_value = &mut self.source[token.start..token.start + token.length];
+
+        let str_ptr = memory::allocate::<String>();
+        memory::copy(str_value.as_mut_ptr(), str_ptr, str_value.len(), 0);
+
+        let obj_string =  Obj::from(FatPointer {ptr: str_ptr, size: str_value.len() });
+        let value = Value::from(obj_string);
+        self.emit_constant(value);
     }
 
     fn grouping(&mut self) {

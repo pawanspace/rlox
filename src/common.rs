@@ -28,7 +28,7 @@ pub(crate) enum OpCode {
 pub(crate) enum Value {
     Boolean(bool),
     Number(f64),
-    Obj(*mut Obj),
+    Obj(Obj),
     Missing
 }
 
@@ -54,12 +54,13 @@ impl Value {
         matches!(self, Value::Obj(_))
     }
 
+
     #[inline]
     pub fn is_obj_string(&self) -> bool {
         return match self {
-            (Value::Obj(ptr))  => {
+            Value::Obj(obj)  => {
                 unsafe {
-                    (**ptr).is_string()
+                    obj.is_string()
                 }
             },
             _ => false
@@ -94,8 +95,8 @@ impl From<f64> for Value {
     }
 }
 
-impl From<*mut Obj> for Value {
-    fn from(value: *mut Obj) -> Self {
+impl From<Obj> for Value {
+    fn from(value: Obj) -> Self {
         Value::Obj(value)
     }
 }
@@ -122,8 +123,8 @@ impl Into<f64> for Value {
     }
 }
 
-impl Into<*mut Obj> for Value {
-    fn into(self) -> *mut Obj {
+impl Into<Obj> for Value {
+    fn into(self) -> Obj {
         match self {
             Value::Obj(value) => value,
             //@todo @pawanc check if it should be false this can be wrong in most cases
@@ -133,14 +134,18 @@ impl Into<*mut Obj> for Value {
     }
 }
 
-
 #[derive(Debug, Clone)]
-pub(crate) enum Obj {
-    Str(String),
-    Nil
+pub(crate) struct FatPointer {
+    pub(crate)  ptr: *mut u8,
+    pub(crate)  size: usize
 }
 
 
+#[derive(Debug, Clone)]
+pub(crate) enum Obj {
+    Str(FatPointer),
+    Nil
+}
 
 impl Obj {
     #[inline]
@@ -155,19 +160,19 @@ impl Obj {
 }
 
 
-impl From<String> for Obj {
-    fn from(value: String) -> Self {
-        Obj::Str(value)
+impl From<FatPointer> for Obj {
+    fn from(ptr: FatPointer) -> Self {
+        Obj::Str(ptr)
     }
 }
 
-impl Into<String> for Obj {
-    fn into(self) -> String {
+impl Into<FatPointer> for Obj {
+    fn into(self) -> FatPointer {
         match self {
-            Obj::Str(value) => value,
+            Obj::Str(ptr) => ptr,
             //@todo @pawanc check if it should be false this can be wrong in most cases
             // may be we should throw error
-            _ => String::new()
+            _ => FatPointer { ptr: "".to_string().as_mut_ptr(), size: 0 as usize }
         }
     }
 }

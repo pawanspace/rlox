@@ -1,5 +1,6 @@
+use std::mem;
 use crate::chunk::Chunk;
-use crate::common::{Obj, OpCode, Value};
+use crate::common::{FatPointer, Obj, OpCode, Value};
 use crate::{compiler, memory};
 use crate::debug;
 use crate::scanner::Scanner;
@@ -149,8 +150,8 @@ impl VM {
                 Some(OpCode::Add) => {
                     let value = self.peek(0);
                     match value {
-                        Value::Obj(ptr1) => {
-                            if value.is_obj_string() {
+                        Value::Obj(obj) => {
+                            if obj.is_string() {
                                 if self.peek(1).is_obj_string() {
                                     let combined = self.concat();
                                     self.push(combined);
@@ -225,25 +226,18 @@ impl VM {
     }
 
     fn concat(&mut self) -> Value {
-        let first = self.pop();
         let second = self.pop();
-        let obj1 = Into::<*mut Obj>::into(first);
-        let obj2 = Into::<*mut Obj>::into(second);
+        let first = self.pop();
+        let obj1 = Into::<Obj>::into(first);
+        let obj2 = Into::<Obj>::into(second);
+        let ptr_1 = Into::<FatPointer>::into(obj1);
+        let ptr_2 = Into::<FatPointer>::into(obj2);
 
-        let new_ptr1 = memory::allocate::<Obj>();
-        let new_ptr2 = memory::allocate::<Obj>();
-        memory::copy(obj1, new_ptr1);
-        memory::copy(obj2, new_ptr2);
+        let ptr = memory::allocate::<String>();
+        memory::copy(ptr, ptr_1.ptr, ptr_1.size, 0);
+        memory::copy(ptr, ptr_2.ptr, ptr_2.size, ptr_1.size);
 
-        let val1 = memory::get(new_ptr1);
-        let str1 = Into::<String>::into(val1);
-        let val2 = memory::get(new_ptr2);
-        let str2 = Into::<String>::into(val2);
-
-        let combined = [str2, str1].join("");
-        let ptr = memory::allocate::<Obj>();
-        memory::add::<Obj>(ptr, Obj::from(combined));
-        Value::from(ptr)
+        Value::from(Obj::from(FatPointer {ptr, size: (ptr_1.size + ptr_2.size)}))
     }
 
     pub(crate) fn interpret_old(&mut self, chunk: Chunk) -> InterpretResult {

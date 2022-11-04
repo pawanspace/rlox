@@ -1,4 +1,5 @@
 use crate::common::{Obj, Value};
+use crate::memory;
 
 pub fn debug(message: String, new_line: bool) {
     if is_debug() && new_line {
@@ -13,19 +14,6 @@ pub fn info(message: String) {
     println!("[INFO] {:?}", message)
 }
 
-pub(crate) fn same_line_info(value: Value) {
-    unsafe {
-        let ptr = Into::<*mut Obj>::into(value);
-
-        if ptr.is_null() {
-            print!("[{:?}] ", "NullPtr")
-        } else {
-            print!("[{:?}] ", *(ptr))
-        }
-    }
-}
-
-
 pub fn is_debug() -> bool {
     // let debug_flag = std::env::args().nth(1);
     // Some("debug") == debug_flag.as_deref()
@@ -35,13 +23,27 @@ pub fn is_debug() -> bool {
 
 pub(crate) fn print_value(value: Value, new_line: bool) {
     match value {
-        Value::Obj(ptr) =>
-            unsafe {
-                debug(format!(
+        Value::Obj(obj) =>
+            match obj {
+                Obj::Str(fat_ptr) => {
+                    unsafe {
+                        let mut bytes: Vec<u8> = Vec::new();
+                        for i in 0..fat_ptr.size {
+                            let b = *(fat_ptr.ptr.offset(i as isize));
+                            bytes.push(b);
+                        }
+                        let str = String::from_utf8(bytes);
+                        debug(format!(
+                            "constant value: {:?}",
+                            str.unwrap()
+                        ), new_line);
+                    }
+                }
+                _ =>  debug(format!(
                     "constant value: {:?}",
-                    *ptr
-                ), new_line);
-            },
+                    obj
+                ), new_line)
+            }
         _ => debug(format!(
             "constant value: {:?}",
             value
