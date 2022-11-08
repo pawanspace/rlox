@@ -1,5 +1,5 @@
-
-
+use std::mem;
+use std::str::Chars;
 use crate::memory;
 use crate::chunk::Chunk;
 use crate::common::{FatPointer, Obj, OpCode, Value};
@@ -26,61 +26,61 @@ enum Precedence {
     Primary = 11,
 }
 
-const noop: Option<ParseFn> = None;
-const grouping: Option<ParseFn> = Some(|compiler| compiler.grouping());
-const binary: Option<ParseFn> = Some(|compiler| compiler.binary());
-const unary: Option<ParseFn> = Some(|compiler| compiler.unary());
-const number: Option<ParseFn> = Some(|compiler| compiler.number());
-const literal: Option<ParseFn> = Some(|compiler| compiler.literal());
-const string: Option<ParseFn> = Some(|compiler| compiler.string());
+const NOOP: Option<ParseFn> = None;
+const GROUPING: Option<ParseFn> = Some(|compiler| compiler.grouping());
+const BINARY: Option<ParseFn> = Some(|compiler| compiler.binary());
+const UNARY: Option<ParseFn> = Some(|compiler| compiler.unary());
+const NUMBER: Option<ParseFn> = Some(|compiler| compiler.number());
+const LITERAL: Option<ParseFn> = Some(|compiler| compiler.literal());
+const STRING: Option<ParseFn> = Some(|compiler| compiler.string());
 
 fn parse_rule(token_type: TokenType) -> ParseRule {
     match token_type {
         TokenType::LeftParen => ParseRule {
-            prefix: grouping,
-            infix: noop,
+            prefix: GROUPING,
+            infix: NOOP,
             precedence: Precedence::None,
         },
         TokenType::Minus | TokenType::Bang => ParseRule {
-            prefix: unary,
-            infix: binary,
+            prefix: UNARY,
+            infix: BINARY,
             precedence: Precedence::Term,
         },
         TokenType::Plus => ParseRule {
-            prefix: noop,
-            infix: binary,
+            prefix: NOOP,
+            infix: BINARY,
             precedence: Precedence::Term,
         },
         TokenType::EqualEqual | TokenType::BangEqual => ParseRule {
-            prefix: noop,
-            infix: binary,
+            prefix: NOOP,
+            infix: BINARY,
             precedence: Precedence::Equality,
         },
         TokenType::Greater | TokenType::Less | TokenType::GreaterEqual | TokenType::LessEqual => {
             ParseRule {
-                prefix: noop,
-                infix: binary,
+                prefix: NOOP,
+                infix: BINARY,
                 precedence: Precedence::Comparison,
             }
         }
         TokenType::Star | TokenType::Slash => ParseRule {
-            prefix: noop,
-            infix: binary,
+            prefix: NOOP,
+            infix: BINARY,
             precedence: Precedence::Factor,
         },
         TokenType::Number => ParseRule {
-            prefix: number,
-            infix: noop,
+            prefix: NUMBER,
+            infix: NOOP,
             precedence: Precedence::None,
         },
         TokenType::False | TokenType::True | TokenType::Nil => ParseRule {
-            prefix: literal,
-            infix: noop,
+            prefix: LITERAL,
+            infix: NOOP,
             precedence: Precedence::None,
         },
         TokenType::String => ParseRule {
-            prefix: string,
-            infix: noop,
+            prefix: STRING,
+            infix: NOOP,
             precedence: Precedence::None,
         },
         TokenType::Comma
@@ -102,14 +102,13 @@ fn parse_rule(token_type: TokenType) -> ParseRule {
         | TokenType::Semicolon
         | TokenType::Equal
         | TokenType::Identifier
-        | TokenType::String
         | TokenType::Dot
         | TokenType::LeftBrace
         | TokenType::RightBrace
         | TokenType::RightParen
         | _ => ParseRule {
-            prefix: noop,
-            infix: noop,
+            prefix: NOOP,
+            infix: NOOP,
             precedence: Precedence::None,
         },
     }
@@ -268,8 +267,8 @@ impl Compiler {
     }
 
     fn string(&mut self) {
-        let token = self.parser.previous.unwrap();
-        let str_value = &mut self.source[token.start..token.start + token.length];
+        let mut token = self.parser.previous.unwrap();
+        let mut str_value = &mut self.source[token.start..token.start + token.length];
 
         let str_ptr = memory::allocate::<String>();
         memory::copy(str_value.as_mut_ptr(), str_ptr, str_value.len(), 0);

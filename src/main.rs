@@ -12,6 +12,8 @@ mod scanner;
 mod value;
 mod vm;
 mod memory;
+mod hash_map;
+
 #[derive(Parser)]
 struct Cli {
     // source file path
