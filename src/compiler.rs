@@ -1,5 +1,5 @@
-use std::mem;
-use std::str::Chars;
+
+
 use crate::memory;
 use crate::chunk::Chunk;
 use crate::common::{FatPointer, Obj, OpCode, Value};
@@ -268,8 +268,8 @@ impl Compiler {
     }
 
     fn string(&mut self) {
-        let mut token = self.parser.previous.unwrap();
-        let mut str_value = &mut self.source[token.start..token.start + token.length];
+        let token = self.parser.previous.unwrap();
+        let str_value = &mut self.source[token.start..token.start + token.length];
 
         let str_ptr = memory::allocate::<String>();
         memory::copy(str_value.as_mut_ptr(), str_ptr, str_value.len(), 0);

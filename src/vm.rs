@@ -1,4 +1,4 @@
-use std::mem;
+
 use crate::chunk::Chunk;
 use crate::common::{FatPointer, Obj, OpCode, Value};
 use crate::{compiler, memory};
@@ -161,7 +161,7 @@ impl VM {
                                 return InterpretResult::InterpretRuntimeError;
                             }
                         }
-                        Value::Number(value) => BINARY_OP!(self, +, f64),
+                        Value::Number(_value) => BINARY_OP!(self, +, f64),
                         _ => {
                             self.runtime_error();
                             return InterpretResult::InterpretOk;

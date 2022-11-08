@@ -1,6 +1,6 @@
 use clap::Parser;
-use std::{env, fs, mem};
-use std::alloc::Layout;
+use std::{env, fs};
+
 use std::io::{Read, Write};
 use std::path::PathBuf;
 mod chunk;

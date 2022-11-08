@@ -1,5 +1,5 @@
-use crate::common::{Obj, OpCode, Value};
-use crate::{debug, memory};
+use crate::common::{OpCode, Value};
+use crate::{debug};
 use crate::value::{self, ValueArray};
 extern crate num;
 #[derive(Debug)]
