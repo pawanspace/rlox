@@ -1,8 +1,6 @@
-use std::mem;
-use std::str::Chars;
-use crate::memory;
 use crate::chunk::Chunk;
 use crate::common::{FatPointer, Obj, OpCode, Value};
+use crate::memory;
 use crate::scanner::{Scanner, Token, TokenType};
 use crate::value::ValueArray;
 use num_derive::FromPrimitive;
@@ -273,7 +271,10 @@ impl Compiler {
         let str_ptr = memory::allocate::<String>();
         memory::copy(str_value.as_mut_ptr(), str_ptr, str_value.len(), 0);
 
-        let obj_string =  Obj::from(FatPointer {ptr: str_ptr, size: str_value.len() });
+        let obj_string = Obj::from(FatPointer {
+            ptr: str_ptr,
+            size: str_value.len(),
+        });
         let value = Value::from(obj_string);
         self.emit_constant(value);
     }

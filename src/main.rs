@@ -1,4 +1,5 @@
 use clap::Parser;
+use hash_map::Table;
 use std::{env, fs};
 
 use std::io::{Read, Write};
@@ -66,7 +67,7 @@ fn repl() {
 }
 
 fn main() {
-    env::set_var("RUST_BACKTRACE", "1");
+    env::set_var("RUST_BACKTRACE", "full");
     let args = Cli::parse();
     if args.path.as_os_str().is_empty() {
         repl();
@@ -74,3 +75,5 @@ fn main() {
         run_file(args.path);
     }
 }
+
+

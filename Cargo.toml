@@ -9,4 +9,5 @@ edition = "2021"
 num = "0.4"
 num-derive = "0.3"
 num-traits = "0.2"
+rustfix = "0.6.0"
 clap = { version = "3.2.17", features = ["derive"] }
