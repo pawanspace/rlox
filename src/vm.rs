@@ -1,10 +1,9 @@
-
 use crate::chunk::Chunk;
 use crate::common::{FatPointer, Obj, OpCode, Value};
-use crate::{compiler, memory};
 use crate::debug;
+use crate::hasher::hash;
 use crate::scanner::Scanner;
-
+use crate::{compiler, memory};
 extern crate num;
 
 const STACK_MAX: usize = 512;
@@ -86,7 +85,6 @@ impl VM {
             local_stack.push(None);
         }
 
-
         VM {
             chunk: None,
             ip: -1,
@@ -110,7 +108,10 @@ impl VM {
     }
 
     fn peek(&mut self, distance: usize) -> Value {
-        self.stack[self.stack_top - 1 - distance].as_ref().unwrap().clone()
+        self.stack[self.stack_top - 1 - distance]
+            .as_ref()
+            .unwrap()
+            .clone()
     }
 
     fn runtime_error(&self) {
@@ -234,10 +235,15 @@ impl VM {
         let ptr_2 = Into::<FatPointer>::into(obj2);
 
         let ptr = memory::allocate::<String>();
-        memory::copy(ptr, ptr_1.ptr, ptr_1.size, 0);
-        memory::copy(ptr, ptr_2.ptr, ptr_2.size, ptr_1.size);
+        memory::copy(ptr_1.ptr, ptr, ptr_1.size, 0);
+        memory::copy(ptr_2.ptr, ptr, ptr_2.size, ptr_1.size);
 
-        Value::from(Obj::from(FatPointer {ptr, size: (ptr_1.size + ptr_2.size)}))
+        let hash_value = hash(memory::read_string(ptr, ptr_1.size + ptr_2.size).as_str());
+        Value::from(Obj::from(FatPointer {
+            ptr,
+            size: (ptr_1.size + ptr_2.size),
+            hash: hash_value,
+        }))
     }
 
     pub(crate) fn interpret_old(&mut self, chunk: Chunk) -> InterpretResult {

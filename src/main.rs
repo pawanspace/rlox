@@ -1,5 +1,4 @@
 use clap::Parser;
-use hash_map::Table;
 use std::{env, fs};
 
 use std::io::{Read, Write};
@@ -9,12 +8,12 @@ mod chunk;
 mod common;
 mod compiler;
 mod debug;
+mod hash_map;
+mod hasher;
+mod memory;
 mod scanner;
 mod value;
 mod vm;
-mod memory;
-mod hash_map;
-
 #[derive(Parser)]
 struct Cli {
     // source file path
@@ -75,5 +74,3 @@ fn main() {
         run_file(args.path);
     }
 }
-
-

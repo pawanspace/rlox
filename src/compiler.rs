@@ -1,5 +1,6 @@
 use crate::chunk::Chunk;
 use crate::common::{FatPointer, Obj, OpCode, Value};
+use crate::hasher;
 use crate::memory;
 use crate::scanner::{Scanner, Token, TokenType};
 use crate::value::ValueArray;
@@ -274,6 +275,7 @@ impl Compiler {
         let obj_string = Obj::from(FatPointer {
             ptr: str_ptr,
             size: str_value.len(),
+            hash: hasher::hash(str_value),
         });
         let value = Value::from(obj_string);
         self.emit_constant(value);

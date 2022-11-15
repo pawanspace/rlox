@@ -1,7 +1,5 @@
-use std::fmt::{Debug};
 use num_derive::FromPrimitive;
-
-
+use std::fmt::Debug;
 
 #[derive(Debug)]
 #[repr(u8)]
@@ -29,7 +27,7 @@ pub(crate) enum Value {
     Boolean(bool),
     Number(f64),
     Obj(Obj),
-    Missing
+    Missing,
 }
 
 impl Value {
@@ -43,7 +41,6 @@ impl Value {
         matches!(self, Value::Missing)
     }
 
-
     #[inline]
     pub fn is_number(&self) -> bool {
         matches!(self, Value::Number(_))
@@ -54,30 +51,24 @@ impl Value {
         matches!(self, Value::Obj(_))
     }
 
-
     #[inline]
     pub fn is_obj_string(&self) -> bool {
         return match self {
-            Value::Obj(obj)  => {
-                unsafe {
-                    obj.is_string()
-                }
-            },
-            _ => false
-        }
+            Value::Obj(obj) => unsafe { obj.is_string() },
+            _ => false,
+        };
     }
 }
-
 
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         if matches!(self, _other) {
-           return match (self, other) {
-               (Value::Boolean(l), Value::Boolean(r)) =>  l == r,
-               (Value::Number(l), Value::Number(r))  => l == r,
-               (Value::Missing, Value::Missing)  => true,
+            return match (self, other) {
+                (Value::Boolean(l), Value::Boolean(r)) => l == r,
+                (Value::Number(l), Value::Number(r)) => l == r,
+                (Value::Missing, Value::Missing) => true,
                 _ => false,
-            }
+            };
         }
         false
     }
@@ -107,7 +98,7 @@ impl Into<bool> for Value {
             Value::Boolean(value) => value,
             //@todo @pawanc check if it should be false this can be wrong in most cases
             // may be we should throw error
-            _ => false
+            _ => false,
         }
     }
 }
@@ -118,7 +109,7 @@ impl Into<f64> for Value {
             Value::Number(value) => value,
             //@todo @pawanc check if it should be false this can be wrong in most cases
             // may be we should throw error
-            _ => 0.0
+            _ => 0.0,
         }
     }
 }
@@ -129,22 +120,22 @@ impl Into<Obj> for Value {
             Value::Obj(value) => value,
             //@todo @pawanc check if it should be false this can be wrong in most cases
             // may be we should throw error
-            _ => panic!("Unexpected error")
+            _ => panic!("Unexpected error"),
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct FatPointer {
-    pub(crate)  ptr: *mut u8,
-    pub(crate)  size: usize
+    pub(crate) ptr: *mut u8,
+    pub(crate) size: usize,
+    pub(crate) hash: u32,
 }
-
 
 #[derive(Debug, Clone)]
 pub(crate) enum Obj {
     Str(FatPointer),
-    Nil
+    Nil,
 }
 
 impl Obj {
@@ -159,7 +150,6 @@ impl Obj {
     }
 }
 
-
 impl From<FatPointer> for Obj {
     fn from(ptr: FatPointer) -> Self {
         Obj::Str(ptr)
@@ -172,8 +162,11 @@ impl Into<FatPointer> for Obj {
             Obj::Str(ptr) => ptr,
             //@todo @pawanc check if it should be false this can be wrong in most cases
             // may be we should throw error
-            _ => FatPointer { ptr: "".to_string().as_mut_ptr(), size: 0 as usize }
+            _ => FatPointer {
+                ptr: "".to_string().as_mut_ptr(),
+                size: 0 as usize,
+                hash: 0,
+            },
         }
     }
 }
-
