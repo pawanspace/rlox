@@ -1,6 +1,5 @@
 use crate::common::FatPointer;
 use crate::memory;
-use crate::hasher::hash;
 use std::fmt::Debug;
 #[derive(Debug, Clone)]
 pub(crate) enum Entry<T> {
@@ -83,7 +82,7 @@ where
                         let bucket = self.find_bucket(key, &temp_entries);
                         temp_entries[bucket] = Entry::Occupied(key.clone(), value.clone());
                         self.size += 1;
-                    }
+                    },
                     _ => (),
                 }
             }
@@ -106,6 +105,29 @@ where
         println!("{:?}", self.entries);
     }
 
+    pub(crate) fn find_entry_with_value(&self, str_value: &str, hash: u32) -> Option<&FatPointer> {
+        let mut bucket = hash % (self.capacity as u32);
+        loop {
+            return match &self.entries[bucket as usize] {
+                Entry::Occupied(existing, _) => {
+                    // if key is same we will use the same index
+                    if memory::read_string(existing.ptr, existing.size).eq(str_value) {
+                        Some(&existing)
+                    } else {
+                        bucket = (bucket + 1) % (self.capacity as u32);
+                        continue;
+                    }
+                },
+                Entry::Vacant => None,
+                Entry::TombStone => {
+                    bucket = (bucket + 1) % (self.capacity as u32);
+                    continue;
+                }
+            };
+        }
+    }
+
+
     fn find_entry(&self, key: &FatPointer) -> Option<&T> {
         let mut bucket = key.hash % (self.capacity as u32);
         loop {
@@ -118,7 +140,7 @@ where
                         bucket = (bucket + 1) % (self.capacity as u32);
                         continue;
                     }
-                }
+                },
                 Entry::Vacant => None,
                 Entry::TombStone => {
                     bucket = (bucket + 1) % (self.capacity as u32);
@@ -137,7 +159,7 @@ where
                 } else {
                     true
                 }
-            }
+            },
             Entry::Vacant | Entry::TombStone => false,
         }
     }
@@ -145,6 +167,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::hasher::hash;
     use super::*;
 
     fn create_fat_ptr(value: &mut &str) -> FatPointer {

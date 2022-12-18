@@ -1,5 +1,6 @@
 use crate::chunk::Chunk;
 use crate::common::{FatPointer, Obj, OpCode, Value};
+use crate::hash_map::Table;
 use crate::hasher;
 use crate::memory;
 use crate::scanner::{Scanner, Token, TokenType};
@@ -128,15 +129,17 @@ struct Parser {
     panic_mode: bool,
 }
 
-pub(crate) struct Compiler {
+pub(crate) struct Compiler<'c> {
     scanner: Scanner,
     parser: Parser,
     chunk: Box<Chunk>,
     source: String,
+    table: &'c mut Table<Value>    
 }
 
-impl Compiler {
-    pub(crate) fn init(scanner: Scanner, chunk: Box<Chunk>) -> Compiler {
+
+impl <'c> Compiler<'c>  {
+    pub(crate) fn init(scanner: Scanner, chunk: Box<Chunk>, table: &'c mut Table<Value>) -> Compiler {
         let parser = Parser {
             current: None,
             previous: None,
@@ -148,11 +151,12 @@ impl Compiler {
             parser,
             chunk,
             source: "".to_string(),
+            table: table                          
         }
     }
 
     pub(crate) fn compile(&mut self, source: String) -> (bool, Box<Chunk>) {
-        self.source = source;
+        self.source = source;        
         let chars: Vec<char> = self.source.chars().collect();
         self.scanner.refresh(0, self.source.len(), chars);
         self.advance();
@@ -266,19 +270,32 @@ impl Compiler {
     }
 
     fn string(&mut self) {
-        let mut token = self.parser.previous.unwrap();
-        let mut str_value = &mut self.source[token.start..token.start + token.length];
+        let token = self.parser.previous.unwrap();
+        let str_value = &mut self.source[token.start..token.start + token.length];
+        let hash_value =  hasher::hash(str_value);
 
-        let str_ptr = memory::allocate::<String>();
-        memory::copy(str_value.as_mut_ptr(), str_ptr, str_value.len(), 0);
+        let exiting_value  = self.table.find_entry_with_value(str_value, hash_value);
 
-        let obj_string = Obj::from(FatPointer {
-            ptr: str_ptr,
-            size: str_value.len(),
-            hash: hasher::hash(str_value),
-        });
-        let value = Value::from(obj_string);
-        self.emit_constant(value);
+        match exiting_value {
+            Some(existing) => {
+                let obj_string = Obj::from(existing.clone());
+                let value = Value::from(obj_string);
+                self.emit_constant(value);
+            },
+            None => {
+                let str_ptr = memory::allocate::<String>();
+                memory::copy(str_value.as_mut_ptr(), str_ptr, str_value.len(), 0);
+                let fat_ptr = FatPointer {
+                    ptr: str_ptr,
+                    size: str_value.len(),
+                    hash: hash_value,
+                };
+                let obj_string = Obj::from(fat_ptr.clone());    
+                let value = Value::from(obj_string);
+                self.table.insert(fat_ptr.clone(), Value::Missing);
+                self.emit_constant(value);
+            }
+        }
     }
 
     fn grouping(&mut self) {

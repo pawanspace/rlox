@@ -67,6 +67,7 @@ impl PartialEq for Value {
                 (Value::Boolean(l), Value::Boolean(r)) => l == r,
                 (Value::Number(l), Value::Number(r)) => l == r,
                 (Value::Missing, Value::Missing) => true,
+                (Value::Obj(l), Value::Obj(r)) => l == r,
                 _ => false,
             };
         }
@@ -125,7 +126,7 @@ impl Into<Obj> for Value {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct FatPointer {
     pub(crate) ptr: *mut u8,
     pub(crate) size: usize,
@@ -147,6 +148,18 @@ impl Obj {
     #[inline]
     pub fn is_nil(&self) -> bool {
         matches!(self, Obj::Nil)
+    }
+}
+
+impl PartialEq for Obj {
+    fn eq(&self, other: &Self) -> bool {
+        if matches!(self, _other) {
+            return match (self, other) {
+                (Obj::Str(l), Obj::Str(r)) => l == r,                
+                _ => false,
+            };
+        }
+        false
     }
 }
 

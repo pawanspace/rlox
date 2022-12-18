@@ -1,6 +1,7 @@
 use crate::chunk::Chunk;
 use crate::common::{FatPointer, Obj, OpCode, Value};
 use crate::debug;
+use crate::hash_map::Table;
 use crate::hasher::hash;
 use crate::scanner::Scanner;
 use crate::{compiler, memory};
@@ -14,6 +15,7 @@ pub(crate) struct VM {
     ip: i32,
     stack: Vec<Option<Value>>,
     stack_top: usize,
+    table:  Table<Value>
 }
 
 pub enum InterpretResult {
@@ -90,6 +92,7 @@ impl VM {
             ip: -1,
             stack: local_stack,
             stack_top: 0,
+            table: Table::init(10)
         }
     }
 
@@ -256,7 +259,7 @@ impl VM {
         let chunk_on_heap = Box::new(chunk);
         let chars: Vec<char> = source.chars().collect();
         let scanner = Scanner::init(0, 0, chars);
-        let mut compiler = compiler::Compiler::init(scanner, chunk_on_heap);
+        let mut compiler = compiler::Compiler::init(scanner, chunk_on_heap, &mut self.table);
         let (had_error, chunk) = compiler.compile(source);
         if had_error {
             return InterpretResult::InterpretCompileError;
