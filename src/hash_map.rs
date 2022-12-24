@@ -45,7 +45,7 @@ where
         new_value
     }
 
-    pub(crate) fn get(&mut self, key: FatPointer) -> Option<&T> {
+    pub(crate) fn get(&self, key: FatPointer) -> Option<&T> {
         self.find_entry(&key)
     }
 
@@ -187,6 +187,28 @@ mod tests {
         map.insert(one, true);
         map.insert(two, true);
         assert!(map.size == 2);
+    }
+
+    #[test]
+    fn can_hold_multiple_keys_multiple_tables() {
+        let mut map = Table::init(2);
+        let one = create_fat_ptr(&mut "one");
+        let two = create_fat_ptr(&mut "two");
+
+        let mut map2: Table<bool> = Table::init(2);
+        let one2 = create_fat_ptr(&mut "one");
+        let two2 = create_fat_ptr(&mut "two");
+
+        map.insert(one.clone(), true);
+        map.insert(two, true);
+        assert!(map.size == 2);
+
+
+        map2.insert(one2.clone(), true);
+        map2.insert(two2, true);
+        assert!(map2.size == 2);
+        assert_eq!(map2.get(one2.clone()), Some(&true));
+        assert_eq!(map.get(one.clone()), Some(&true));
     }
 
     #[test]

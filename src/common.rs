@@ -1,6 +1,8 @@
 use num_derive::FromPrimitive;
 use std::fmt::Debug;
 
+use crate::{hasher, memory, scanner::Token};
+
 #[derive(Debug)]
 #[repr(u8)]
 #[derive(FromPrimitive)]
@@ -20,6 +22,11 @@ pub(crate) enum OpCode {
     Equal = 13,
     Greater = 14,
     Less = 15,
+    Print = 16,
+    Pop = 17,
+    DefineGlobalVariable = 18,
+    SetGlobalVariable = 19,
+    GetGloablVariable = 20,
 }
 
 #[derive(Debug, Clone)]
@@ -155,7 +162,7 @@ impl PartialEq for Obj {
     fn eq(&self, other: &Self) -> bool {
         if matches!(self, _other) {
             return match (self, other) {
-                (Obj::Str(l), Obj::Str(r)) => l == r,                
+                (Obj::Str(l), Obj::Str(r)) => l == r,
                 _ => false,
             };
         }
@@ -166,6 +173,20 @@ impl PartialEq for Obj {
 impl From<FatPointer> for Obj {
     fn from(ptr: FatPointer) -> Self {
         Obj::Str(ptr)
+    }
+}
+
+impl From<&mut str> for Obj {
+    fn from(str_value: &mut str) -> Self {                
+        let hash_value = hasher::hash(str_value);
+        let str_ptr = memory::allocate::<String>();
+        memory::copy(str_value.as_mut_ptr(), str_ptr, str_value.len(), 0);
+        let fat_ptr = FatPointer {
+            ptr: str_ptr,
+            size: str_value.len(),
+            hash: hash_value,
+        };
+        Obj::from(fat_ptr.clone())
     }
 }
 

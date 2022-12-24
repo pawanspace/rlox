@@ -27,12 +27,13 @@ enum Precedence {
 }
 
 const NOOP: Option<ParseFn> = None;
-const GROUPING: Option<ParseFn> = Some(|compiler| compiler.grouping());
-const BINARY: Option<ParseFn> = Some(|compiler| compiler.binary());
-const UNARY: Option<ParseFn> = Some(|compiler| compiler.unary());
-const NUMBER: Option<ParseFn> = Some(|compiler| compiler.number());
-const LITERAL: Option<ParseFn> = Some(|compiler| compiler.literal());
-const STRING: Option<ParseFn> = Some(|compiler| compiler.string());
+const GROUPING: Option<ParseFn> = Some(|compiler, can_assign| compiler.grouping(can_assign));
+const BINARY: Option<ParseFn> = Some(|compiler, can_assign| compiler.binary(can_assign));
+const UNARY: Option<ParseFn> = Some(|compiler, can_assign| compiler.unary(can_assign));
+const NUMBER: Option<ParseFn> = Some(|compiler, can_assign| compiler.number(can_assign));
+const LITERAL: Option<ParseFn> = Some(|compiler, can_assign| compiler.literal(can_assign));
+const STRING: Option<ParseFn> = Some(|compiler, can_assign| {compiler.string(can_assign, true);});
+const VARIABLE: Option<ParseFn> = Some(|compiler, can_assign| compiler.variable(can_assign));
 
 fn parse_rule(token_type: TokenType) -> ParseRule {
     match token_type {
@@ -83,6 +84,11 @@ fn parse_rule(token_type: TokenType) -> ParseRule {
             infix: NOOP,
             precedence: Precedence::None,
         },
+        TokenType::Identifier => ParseRule {
+            prefix: VARIABLE,
+            infix: NOOP,
+            precedence: Precedence::None,
+        },
         TokenType::Comma
         | TokenType::And
         | TokenType::Class
@@ -101,7 +107,6 @@ fn parse_rule(token_type: TokenType) -> ParseRule {
         | TokenType::Eof
         | TokenType::Semicolon
         | TokenType::Equal
-        | TokenType::Identifier
         | TokenType::Dot
         | TokenType::LeftBrace
         | TokenType::RightBrace
@@ -114,7 +119,7 @@ fn parse_rule(token_type: TokenType) -> ParseRule {
     }
 }
 
-type ParseFn = fn(compiler: &mut Compiler);
+type ParseFn = fn(compiler: &mut Compiler, can_assign: bool);
 
 struct ParseRule {
     prefix: Option<ParseFn>,
@@ -134,12 +139,15 @@ pub(crate) struct Compiler<'c> {
     parser: Parser,
     chunk: Box<Chunk>,
     source: String,
-    table: &'c mut Table<Value>    
+    table: &'c mut Table<Value>,
 }
 
-
-impl <'c> Compiler<'c>  {
-    pub(crate) fn init(scanner: Scanner, chunk: Box<Chunk>, table: &'c mut Table<Value>) -> Compiler {
+impl<'c> Compiler<'c> {
+    pub(crate) fn init(
+        scanner: Scanner,
+        chunk: Box<Chunk>,
+        table: &'c mut Table<Value>,
+    ) -> Compiler {
         let parser = Parser {
             current: None,
             previous: None,
@@ -151,17 +159,18 @@ impl <'c> Compiler<'c>  {
             parser,
             chunk,
             source: "".to_string(),
-            table: table                          
+            table: table,
         }
     }
 
     pub(crate) fn compile(&mut self, source: String) -> (bool, Box<Chunk>) {
-        self.source = source;        
+        self.source = source;
         let chars: Vec<char> = self.source.chars().collect();
         self.scanner.refresh(0, self.source.len(), chars);
         self.advance();
-        self.expression();
-        self.consume(TokenType::Eof, "Expect end of expression.");
+        while !self.match_token(TokenType::Eof) {
+            self.declaration();
+        }
         self.end_compiler();
         (
             self.parser.had_error,
@@ -185,6 +194,119 @@ impl <'c> Compiler<'c>  {
             }
 
             self.error_at_current("@todo some error here")
+        }
+    }
+
+    fn declaration(&mut self) {
+        if self.match_token(TokenType::Var) {
+            self.variable_decl();
+        } else {
+            self.statement();
+        }
+
+        if self.parser.panic_mode {
+            self.synchronize_error();
+        }
+    }
+
+    fn variable_decl(&mut self) {
+        self.consume(TokenType::Identifier, "Expected name after variable");
+        let index = self.identifier();
+
+        if self.match_token(TokenType::Equal) {
+            self.expression();
+        } else {
+            self.emit_opcode(OpCode::Nil);
+        }
+
+        self.consume_semicolon();
+        self.define_variable(index)
+    }
+
+    fn variable(&mut self, can_assign: bool) {
+        let index = self.identifier();
+        if can_assign && self.match_token(TokenType::Equal) {
+            self.expression();
+            self.emit_opcode(OpCode::SetGlobalVariable);            
+        } else {
+            self.emit_opcode(OpCode::GetGloablVariable);
+        }
+        self.chunk
+            .write_index(index, self.parser.previous.unwrap().line);
+    }
+
+    fn define_variable(&mut self, index: usize) {
+        self.emit_opcode(OpCode::DefineGlobalVariable);
+        self.chunk
+            .write_index(index, self.parser.previous.unwrap().line);
+    }
+
+    fn identifier(&mut self) -> usize {
+        self.string(false, false)
+    }
+
+    fn statement(&mut self) {
+        if self.match_token(TokenType::Print) {
+            self.print_stmt();
+        } else {
+            self.expression_statement();
+        }
+    }
+
+    fn expression_statement(&mut self) {
+        self.expression();
+        self.consume_semicolon();
+        self.emit_opcode(OpCode::Pop);
+    }
+
+    fn consume_semicolon(&mut self) {
+        self.consume(
+            TokenType::Semicolon,
+            "Expected semicolon at the end of experession",
+        );
+    }
+
+    fn synchronize_error(&mut self) {
+        self.parser.panic_mode = false;
+
+        while !self.check(TokenType::Eof) {
+            if self.check(TokenType::Semicolon) {
+                return;
+            }
+
+            match self.parser.current.unwrap().token_type {
+                TokenType::Class
+                | TokenType::Fun
+                | TokenType::If
+                | TokenType::While
+                | TokenType::Var
+                | TokenType::Print
+                | TokenType::For
+                | TokenType::Return => return,
+                _ => self.advance(),
+            }
+        }
+    }
+
+    fn print_stmt(&mut self) {
+        self.expression();
+        self.consume_semicolon();
+        self.emit_opcode(OpCode::Print);
+    }
+
+    fn match_token(&mut self, token_type: TokenType) -> bool {
+        if self.check(token_type) {
+            self.advance();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn check(&self, token_type: TokenType) -> bool {
+        match self.parser.current {
+            Some(current_token) => current_token.token_type == token_type,
+            None => false,
         }
     }
 
@@ -254,7 +376,7 @@ impl <'c> Compiler<'c>  {
         self.parse_precedence(Precedence::Assignment);
     }
 
-    fn emit_constant(&mut self, value: Value) {
+    fn emit_constant(&mut self, value: Value) -> usize {
         self.chunk
             .write_constant(value, self.parser.previous.unwrap().line)
     }
@@ -264,24 +386,28 @@ impl <'c> Compiler<'c>  {
         value.parse::<f64>().unwrap()
     }
 
-    fn number(&mut self) {
+    fn number(&mut self, can_assign: bool) {
         let value: f64 = self.str_to_float(self.parser.previous.unwrap());
         self.emit_constant(Value::from(value));
     }
 
-    fn string(&mut self) {
+    fn string(&mut self, can_assign: bool, emit_constant: bool) -> usize {
         let token = self.parser.previous.unwrap();
         let str_value = &mut self.source[token.start..token.start + token.length];
-        let hash_value =  hasher::hash(str_value);
+        let hash_value = hasher::hash(str_value);
 
-        let exiting_value  = self.table.find_entry_with_value(str_value, hash_value);
+        let exiting_value = self.table.find_entry_with_value(str_value, hash_value);
 
         match exiting_value {
             Some(existing) => {
                 let obj_string = Obj::from(existing.clone());
                 let value = Value::from(obj_string);
-                self.emit_constant(value);
-            },
+                if emit_constant {
+                    self.emit_constant(value)
+                } else {
+                    self.chunk.add_constant(value)
+                }                
+            }
             None => {
                 let str_ptr = memory::allocate::<String>();
                 memory::copy(str_value.as_mut_ptr(), str_ptr, str_value.len(), 0);
@@ -290,20 +416,24 @@ impl <'c> Compiler<'c>  {
                     size: str_value.len(),
                     hash: hash_value,
                 };
-                let obj_string = Obj::from(fat_ptr.clone());    
+                let obj_string = Obj::from(fat_ptr.clone());
                 let value = Value::from(obj_string);
                 self.table.insert(fat_ptr.clone(), Value::Missing);
-                self.emit_constant(value);
+                if emit_constant {
+                    self.emit_constant(value)
+                } else {
+                    self.chunk.add_constant(value)
+                }
             }
         }
     }
 
-    fn grouping(&mut self) {
+    fn grouping(&mut self, can_assign: bool) {
         self.expression();
         self.consume(TokenType::RightParen, "Expect ')' after expression");
     }
 
-    fn unary(&mut self) {
+    fn unary(&mut self, can_assign: bool) {
         let operator_type = self.parser.previous.unwrap().token_type;
 
         // we put expression first because we would first evaluate the operand
@@ -338,7 +468,7 @@ impl <'c> Compiler<'c>  {
         parse_rule(token_type)
     }
 
-    fn binary(&mut self) {
+    fn binary(&mut self, can_assign: bool) {
         let operator_type = self.parser.previous.unwrap().token_type;
         let rule = self.get_rule(operator_type);
         let next_op: Precedence = num::FromPrimitive::from_u8((rule.precedence) as u8 + 1).unwrap();
@@ -346,7 +476,7 @@ impl <'c> Compiler<'c>  {
         self.emit_operator(operator_type);
     }
 
-    fn literal(&mut self) {
+    fn literal(&mut self, can_assign: bool) {
         let token_type = self.parser.previous.unwrap().token_type;
         match token_type {
             TokenType::False => self.emit_opcode(OpCode::False),
@@ -367,8 +497,10 @@ impl <'c> Compiler<'c>  {
             return;
         }
 
+        let can_assign = precedence as u8 <= Precedence::Assignment as u8;
+    
         let prefix_func = prefix.unwrap();
-        prefix_func(self);
+        prefix_func(self, can_assign);
 
         while precedence as u8
             <= self
@@ -380,7 +512,10 @@ impl <'c> Compiler<'c>  {
                 .get_rule(self.parser.previous.unwrap().token_type)
                 .infix;
             let infix_func = infix.unwrap();
-            infix_func(self);
+            infix_func(self, can_assign);
+        }
+        if can_assign && self.match_token(TokenType::Equal) {
+            self.error("Invalid assignment target");
         }
     }
 }

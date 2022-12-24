@@ -23,20 +23,28 @@ impl<'a> Chunk {
         self.lines.push(line);
     }
 
-    pub fn add_constant(&mut self, value: Value) -> usize {
+    pub(crate) fn add_constant(&mut self, value: Value) -> usize {
         self.constants.append(value);
         self.constants.count()
     }
 
     // version of write_chunk
-    pub(crate) fn write_constant(&mut self, value: Value, line: u32) {
+    pub(crate) fn write_constant(&mut self, value: Value, line: u32) -> usize {
         let index = self.add_constant(value);
         // for any index constant that doesn't fit in u8, we store all bytes
         if index <= 255 {
-            self.write_chunk(OpCode::Constant as u8, line);
-            self.write_chunk(index as u8, line);
+            self.write_chunk(OpCode::Constant as u8, line);            
         } else {
             self.write_chunk(OpCode::ConstantLong as u8, line);
+        }
+        self.write_index(index, line);
+        index
+    }
+
+    pub(crate) fn write_index(&mut self, index: usize, line: u32) {
+        if index <= 255 {            
+            self.write_chunk(index as u8, line);
+        } else {            
             let bytes = index.to_ne_bytes();
             for byte in bytes.iter() {
                 self.write_chunk(*byte, line);
@@ -75,6 +83,10 @@ impl<'a> Chunk {
             | Some(OpCode::Greater)
             | Some(OpCode::Less)
             | Some(OpCode::Equal)
+            | Some(OpCode::Print)
+            | Some(OpCode::DefineGlobalVariable)
+            | Some(OpCode::GetGloablVariable)
+            | Some(OpCode::SetGlobalVariable)
             | Some(OpCode::Divide) => {
                 debug::debug(format!("opcode: {:?}", opcode.unwrap()), true);
             }

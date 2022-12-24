@@ -326,11 +326,13 @@ impl Scanner {
         let start_index = self.start + start;
         let end_index_exclusive = start_index + length;
 
-        let slice = &self.chars[start_index..end_index_exclusive];
-        let rest_slice: Vec<char> = rest.chars().collect();
-        let o = slice.cmp(&rest_slice);
-        if o == Ordering::Equal {
-            return token_type;
+        if self.chars.len() >= end_index_exclusive {
+            let slice = &self.chars[start_index..end_index_exclusive];
+            let rest_slice: Vec<char> = rest.chars().collect();
+            let o = slice.cmp(&rest_slice);
+            if o == Ordering::Equal {
+                return token_type;
+            }
         }
 
         TokenType::Identifier
