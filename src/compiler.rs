@@ -32,7 +32,9 @@ const BINARY: Option<ParseFn> = Some(|compiler, can_assign| compiler.binary(can_
 const UNARY: Option<ParseFn> = Some(|compiler, can_assign| compiler.unary(can_assign));
 const NUMBER: Option<ParseFn> = Some(|compiler, can_assign| compiler.number(can_assign));
 const LITERAL: Option<ParseFn> = Some(|compiler, can_assign| compiler.literal(can_assign));
-const STRING: Option<ParseFn> = Some(|compiler, can_assign| {compiler.string(can_assign, true);});
+const STRING: Option<ParseFn> = Some(|compiler, can_assign| {
+    compiler.string(can_assign, true);
+});
 const VARIABLE: Option<ParseFn> = Some(|compiler, can_assign| compiler.variable(can_assign));
 
 fn parse_rule(token_type: TokenType) -> ParseRule {
@@ -133,6 +135,11 @@ struct Parser {
     had_error: bool,
     panic_mode: bool,
 }
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Local {
+    name: Token,
+    depth: usize,
+}
 
 pub(crate) struct Compiler<'c> {
     scanner: Scanner,
@@ -140,6 +147,9 @@ pub(crate) struct Compiler<'c> {
     chunk: Box<Chunk>,
     source: String,
     table: &'c mut Table<Value>,
+    locals: Vec<Local>,
+    local_count: usize,
+    scope_depth: usize,
 }
 
 impl<'c> Compiler<'c> {
@@ -154,12 +164,18 @@ impl<'c> Compiler<'c> {
             had_error: false,
             panic_mode: false,
         };
+
+        let locals = vec![];
+
         Compiler {
             scanner,
             parser,
             chunk,
             source: "".to_string(),
             table: table,
+            locals,
+            local_count: 0,
+            scope_depth: 0,
         }
     }
 
@@ -211,7 +227,12 @@ impl<'c> Compiler<'c> {
 
     fn variable_decl(&mut self) {
         self.consume(TokenType::Identifier, "Expected name after variable");
-        let index = self.identifier();
+        self.declare_variable();
+
+        let mut index = 0;
+        if self.scope_depth <= 0 {
+            index = self.identifier();
+        }
 
         if self.match_token(TokenType::Equal) {
             self.expression();
@@ -223,19 +244,81 @@ impl<'c> Compiler<'c> {
         self.define_variable(index)
     }
 
+    fn declare_variable(&mut self) {
+        if self.scope_depth > 0 {
+            if self.local_count == 255 {
+                self.error("Too many local variables in function.");
+                return;
+            }
+
+            let local = Local {
+                name: self.parser.previous.unwrap(),
+                depth: self.scope_depth,
+            };
+
+            let matching_token = self.resolve_local(local.name);
+
+            if matching_token != -1 {
+                self.error("Already a variable with this name in this scope.");
+            }
+
+            self.locals[self.local_count] = local;
+            self.local_count += 1;
+        }
+    }
+
+    fn resolve_local(&mut self, token: Token) -> i32 {
+        let mut index = -1;
+        for (idx, existing) in self.locals.iter().enumerate() {
+            if existing.depth >= self.scope_depth {
+                let existing_token = existing.name;
+
+                if token.length != existing_token.length {
+                    continue;
+                }
+
+                let existing_name = self.token_name(existing_token);
+                let local_name = self.token_name(token);
+                if local_name == existing_name {
+                    index = idx as i32;
+                }
+            }
+        }
+        index
+    }
+
     fn variable(&mut self, can_assign: bool) {
-        let index = self.identifier();
+        let token = self.parser.previous.unwrap();
+        let mut existing_index = self.resolve_local(token);
+        let mut set_op = OpCode::Nil;
+        let mut get_op  = OpCode::Nil;
+        if existing_index > 0 {
+            set_op = OpCode::SetLocalVariable;
+            get_op = OpCode::GetLocalVariable;
+        } else {
+            let index = self.identifier();
+            existing_index = index as i32;
+            set_op = OpCode::SetGlobalVariable;
+            get_op = OpCode::GetGloablVariable;
+        }
+
         if can_assign && self.match_token(TokenType::Equal) {
             self.expression();
-            self.emit_opcode(OpCode::SetGlobalVariable);            
+            self.emit_opcode(set_op);
+            self.chunk
+            // @type_conversion this conversion here to uszie will result in uusize::MAX
+            // when existing_index is -1
+            .write_index(existing_index as usize, self.parser.previous.unwrap().line);
         } else {
-            self.emit_opcode(OpCode::GetGloablVariable);
+            self.emit_opcode(get_op);
         }
-        self.chunk
-            .write_index(index, self.parser.previous.unwrap().line);
     }
 
     fn define_variable(&mut self, index: usize) {
+        if self.scope_depth > 0 {
+            return;
+        }
+
         self.emit_opcode(OpCode::DefineGlobalVariable);
         self.chunk
             .write_index(index, self.parser.previous.unwrap().line);
@@ -248,9 +331,39 @@ impl<'c> Compiler<'c> {
     fn statement(&mut self) {
         if self.match_token(TokenType::Print) {
             self.print_stmt();
+        } else if self.match_token(TokenType::LeftBrace) {
+            self.begin_scope();
+            self.block();
+            self.end_scope();
         } else {
             self.expression_statement();
         }
+    }
+
+    fn block(&mut self) {
+        while self.check(TokenType::RightBrace) || self.check(TokenType::Eof) {
+            self.declaration();
+        }
+
+        self.consume(TokenType::RightBrace, "Expect '(' after block.");
+    }
+
+    fn begin_scope(&mut self) {
+        self.scope_depth += 1;
+    }
+
+    fn end_scope(&mut self) {
+        self.scope_depth -= 1;
+        let scoped_locals = self
+            .locals
+            .iter()
+            .filter(|local| local.depth > self.scope_depth)
+            .count();
+
+        for _ in 1..=scoped_locals {
+            self.emit_opcode(OpCode::Pop);
+        }
+        self.local_count -= scoped_locals;
     }
 
     fn expression_statement(&mut self) {
@@ -382,7 +495,7 @@ impl<'c> Compiler<'c> {
     }
 
     fn str_to_float(&mut self, token: Token) -> f64 {
-        let value = &self.source[token.start..token.start + token.length];
+        let value = self.token_name(token);
         value.parse::<f64>().unwrap()
     }
 
@@ -406,7 +519,7 @@ impl<'c> Compiler<'c> {
                     self.emit_constant(value)
                 } else {
                     self.chunk.add_constant(value)
-                }                
+                }
             }
             None => {
                 let str_ptr = memory::allocate::<String>();
@@ -486,6 +599,10 @@ impl<'c> Compiler<'c> {
         }
     }
 
+    fn token_name(&self, token: Token) -> &str {
+        &self.source[token.start..token.start + token.length]
+    }
+
     fn parse_precedence(&mut self, precedence: Precedence) {
         self.advance();
         let prefix = self
@@ -498,7 +615,7 @@ impl<'c> Compiler<'c> {
         }
 
         let can_assign = precedence as u8 <= Precedence::Assignment as u8;
-    
+
         let prefix_func = prefix.unwrap();
         prefix_func(self, can_assign);
 

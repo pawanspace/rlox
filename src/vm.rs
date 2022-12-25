@@ -232,6 +232,15 @@ impl VM {
                 Some(OpCode::Pop) => {
                     self.pop();
                 },
+                Some(OpCode::GetLocalVariable) => {
+                    let b = READ_BYTE!(self);
+                    let val = self.stack[b as usize].clone().unwrap();
+                    self.push(val.clone());
+                },
+                Some(OpCode::SetLocalVariable) => {
+                    let b = READ_BYTE!(self);
+                    self.stack[b as usize] = Some(self.pop());                                        
+                },
                 Some(OpCode::GetGloablVariable) => {
                     let constant = READ_CONSTANT!(self).unwrap().clone();
                     let variable_name = READ_FAT_PTR!(self, constant);   
