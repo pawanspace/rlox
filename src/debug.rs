@@ -19,6 +19,10 @@ pub fn is_debug() -> bool {
     true
 }
 
+pub fn print_stack() -> bool {
+    false
+}
+
 pub(crate) fn print_value(value: Value, new_line: bool) {
     match value {
         Value::Obj(obj) => match obj {

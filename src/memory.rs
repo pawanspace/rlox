@@ -61,8 +61,7 @@ pub fn read_string(ptr: *mut u8, len: usize) -> String {
         for i in 0..len {
             let b = *(ptr.offset(i as isize));
             bytes.push(b);
-        }
-        println!("bytes {:?}", bytes);
+        }        
         match String::from_utf8(bytes) {
             Ok(value) => value,
             Err(e) => panic!("not able to unwrap string from utf8 {:?}", e),

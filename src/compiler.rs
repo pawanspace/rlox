@@ -36,6 +36,8 @@ const STRING: Option<ParseFn> = Some(|compiler, can_assign| {
     compiler.string(can_assign, true);
 });
 const VARIABLE: Option<ParseFn> = Some(|compiler, can_assign| compiler.variable(can_assign));
+const OR: Option<ParseFn> = Some(|compiler, can_assign| compiler.or(can_assign));
+const AND: Option<ParseFn> = Some(|compiler, can_assign| compiler.and(can_assign));
 
 fn parse_rule(token_type: TokenType) -> ParseRule {
     match token_type {
@@ -91,14 +93,22 @@ fn parse_rule(token_type: TokenType) -> ParseRule {
             infix: NOOP,
             precedence: Precedence::None,
         },
+        TokenType::Or => ParseRule {
+            prefix: NOOP,
+            infix: OR,
+            precedence: Precedence::Or,
+        },
+        TokenType::And => ParseRule {
+            prefix: NOOP,
+            infix: AND,
+            precedence: Precedence::And,
+        },
         TokenType::Comma
-        | TokenType::And
         | TokenType::Class
         | TokenType::Else
         | TokenType::For
         | TokenType::Fun
         | TokenType::If
-        | TokenType::Or
         | TokenType::Print
         | TokenType::Return
         | TokenType::Super
@@ -136,9 +146,9 @@ struct Parser {
     panic_mode: bool,
 }
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Local {
-    name: Token,
-    depth: usize,
+pub(crate) enum Local {
+    Filled(Token, usize),
+    Empty,
 }
 
 pub(crate) struct Compiler<'c> {
@@ -165,7 +175,8 @@ impl<'c> Compiler<'c> {
             panic_mode: false,
         };
 
-        let locals = vec![];
+        let mut locals = vec![];
+        locals.resize(u8::MAX as usize, Local::Empty);
 
         Compiler {
             scanner,
@@ -250,13 +261,10 @@ impl<'c> Compiler<'c> {
                 self.error("Too many local variables in function.");
                 return;
             }
+            let token = self.parser.previous.unwrap();
+            let local = Local::Filled(token, self.scope_depth);
 
-            let local = Local {
-                name: self.parser.previous.unwrap(),
-                depth: self.scope_depth,
-            };
-
-            let matching_token = self.resolve_local(local.name);
+            let matching_token = self.resolve_local(token);
 
             if matching_token != -1 {
                 self.error("Already a variable with this name in this scope.");
@@ -267,32 +275,33 @@ impl<'c> Compiler<'c> {
         }
     }
 
-    fn resolve_local(&mut self, token: Token) -> i32 {
-        let mut index = -1;
-        for (idx, existing) in self.locals.iter().enumerate() {
-            if existing.depth >= self.scope_depth {
-                let existing_token = existing.name;
-
-                if token.length != existing_token.length {
-                    continue;
+    fn resolve_local(&mut self, token: Token) -> i32 {        
+        for (idx, existing) in self.locals.iter().enumerate().rev() {
+            match existing {
+                Local::Filled(existing_token, depth) => {
+                    if depth.ge(&self.scope_depth) {
+                        if token.length != existing_token.length {
+                            continue;
+                        }
+                        let existing_name = self.token_name(existing_token.clone());
+                        let local_name = self.token_name(token);
+                        if local_name == existing_name {
+                            return idx as i32;
+                        }
+                    }
                 }
-
-                let existing_name = self.token_name(existing_token);
-                let local_name = self.token_name(token);
-                if local_name == existing_name {
-                    index = idx as i32;
-                }
+                _ => continue,
             }
         }
-        index
+        -1
     }
 
     fn variable(&mut self, can_assign: bool) {
         let token = self.parser.previous.unwrap();
         let mut existing_index = self.resolve_local(token);
         let mut set_op = OpCode::Nil;
-        let mut get_op  = OpCode::Nil;
-        if existing_index > 0 {
+        let mut get_op = OpCode::Nil;
+        if existing_index >= 0 {
             set_op = OpCode::SetLocalVariable;
             get_op = OpCode::GetLocalVariable;
         } else {
@@ -306,11 +315,15 @@ impl<'c> Compiler<'c> {
             self.expression();
             self.emit_opcode(set_op);
             self.chunk
-            // @type_conversion this conversion here to uszie will result in uusize::MAX
-            // when existing_index is -1
-            .write_index(existing_index as usize, self.parser.previous.unwrap().line);
+                // @type_conversion this conversion here to usize will result in usize::MAX
+                // when existing_index is -1
+                .write_index(existing_index as usize, self.parser.previous.unwrap().line);
         } else {
             self.emit_opcode(get_op);
+            self.chunk
+                // @type_conversion this conversion here to usize will result in usize::MAX
+                // when existing_index is -1
+                .write_index(existing_index as usize, self.parser.previous.unwrap().line);
         }
     }
 
@@ -331,6 +344,12 @@ impl<'c> Compiler<'c> {
     fn statement(&mut self) {
         if self.match_token(TokenType::Print) {
             self.print_stmt();
+        } else if self.match_token(TokenType::If) {
+            self.if_stmt();
+        } else if self.match_token(TokenType::While) {
+            self.while_stmt();
+        } else if self.match_token(TokenType::For) {
+            self.for_stmt();
         } else if self.match_token(TokenType::LeftBrace) {
             self.begin_scope();
             self.block();
@@ -340,12 +359,145 @@ impl<'c> Compiler<'c> {
         }
     }
 
+    fn for_stmt(&mut self) {
+        self.begin_scope();
+        self.consume(TokenType::LeftParen, "Expect '(' after if statement");
+
+        // optional init
+        if !self.match_token(TokenType::Semicolon) {
+            if self.match_token(TokenType::Var) {
+                self.variable_decl();
+            } else {
+                self.expression_statement();
+            }
+        }
+        // loop always comes back to condition after increment if there is increment
+        // loop_start will move to inc_start if increment expression is available.
+        let mut loop_start = self.chunk.code.len();
+
+        // optional condition
+        let mut end_loop = usize::MAX;
+        if !self.match_token(TokenType::Semicolon) {
+            self.expression();
+            self.consume_semicolon();
+            end_loop = self.emit_jump(OpCode::JumpIfFalse);
+            self.emit_opcode(OpCode::Pop) // pop truthy
+        }
+
+   
+        // optional increment block
+        if !self.match_token(TokenType::RightParen) {
+            let body_jump = self.emit_jump(OpCode::Jump);
+            let inc_start = self.chunk.code.len();
+            self.expression();
+            self.emit_opcode(OpCode::Pop);
+            self.consume(
+                TokenType::RightParen,
+                "Expect ')' at the end of if statement",
+            );
+            self.emit_loop(loop_start);
+            loop_start = inc_start;
+            self.patch_jump(body_jump);
+        }
+
+        self.statement();
+        self.emit_loop(loop_start);
+        // jump to end of loop if condition is false but
+        // only if there is a condition as its optional.
+        if end_loop != usize::MAX {
+            self.patch_jump(end_loop);
+            self.emit_opcode(OpCode::Pop) // pop false
+        }
+
+        self.end_scope();
+    }
+
+    fn while_stmt(&mut self) {
+        let loop_start = self.chunk.code.len();
+        self.consume(TokenType::LeftParen, "Expect '(' after if statement");
+        self.expression();
+        self.consume(
+            TokenType::RightParen,
+            "Expect ')' at the end of if statement",
+        );
+        let exit_jump = self.emit_jump(OpCode::JumpIfFalse);
+        self.emit_opcode(OpCode::Pop); // remove truthy result
+        self.statement();
+        self.emit_loop(loop_start);
+        self.patch_jump(exit_jump);
+        self.emit_opcode(OpCode::Pop); // remove falsey result
+    }
+
+    fn emit_loop(&mut self, loop_start: usize) {
+        self.emit_opcode(OpCode::Loop);
+        let jump = (self.chunk.code.len() - loop_start + 2) as u16;
+
+        if jump > u16::MAX {
+            self.error(format!("Can not jump more than {:?} bytes", u16::MAX).as_str());
+        } else {
+            self.emit_byte(((jump >> 8) & 0xff) as u8);
+            self.emit_byte((jump & 0xff) as u8);
+        }
+    }
+
+    fn if_stmt(&mut self) {
+        self.consume(TokenType::LeftParen, "Expect '(' after if statement");
+        self.expression();
+        self.consume(
+            TokenType::RightParen,
+            "Expect ')' at the end of if statement",
+        );
+        let offset = self.emit_jump(OpCode::JumpIfFalse);
+        self.emit_opcode(OpCode::Pop); // remove if condition result from stack top when if is truthy
+        self.statement();
+        let else_offset = self.emit_jump(OpCode::Jump);
+        self.patch_jump(offset);
+        self.emit_opcode(OpCode::Pop); // remove if condition result from stack top when if is not truthy
+        if self.match_token(TokenType::Else) {
+            self.statement();
+        }
+        self.patch_jump(else_offset);
+    }
+
+    fn emit_jump(&mut self, instruction: OpCode) -> usize {
+        self.emit_opcode(instruction);
+        //We use two bytes for the jump offset operand.
+        //A 16-bit offset lets us jump over up to 65,535 bytes of code,
+        // which should be plenty for our needs.
+        self.emit_byte(0xff);
+        self.emit_byte(0xff);
+        // return index to where we emit two bytes for offset operand.
+        self.chunk.code.len() - 2
+    }
+
+    fn patch_jump(&mut self, offset: usize) {
+        // if we start emitting jump_if_else when ip is set to 5
+        // jump_if_else will go at 6, first 8 bits of offset to 7 and last 8 bits
+        // to 8th index of ip. Offset returned from emit_jump will be 6
+        // as it removes the offset bytes. Lets assume we push 4 instructions as part of
+        // if block. We calculate how much to jump if if condition is false.
+        // 12 - 6 - 2 = 4, we need to skip 4 bytes which makes sense because
+        // we did insert 4 instructions as part of if block.
+        // -2 to adjust for the bytecode for the jump offset itself.
+        let jump = (self.chunk.code.len() - offset - 2) as u16;
+
+        if jump > u16::MAX {
+            self.error(format!("Can not jump more than {:?} bytes", u16::MAX).as_str());
+        } else {
+            // get msb 8 bits from the offset and mask with 0xff to
+            // make other bits are reset
+            self.chunk.code[offset] = ((jump >> 8) & 0xff) as u8;
+            // get lsb 8 bits
+            self.chunk.code[offset + 1] = (jump & 0xff) as u8;
+        }
+    }
+
     fn block(&mut self) {
-        while self.check(TokenType::RightBrace) || self.check(TokenType::Eof) {
+        while !self.check(TokenType::RightBrace) && !self.check(TokenType::Eof) {
             self.declaration();
         }
 
-        self.consume(TokenType::RightBrace, "Expect '(' after block.");
+        self.consume(TokenType::RightBrace, "Expect '}' after block.");
     }
 
     fn begin_scope(&mut self) {
@@ -357,7 +509,14 @@ impl<'c> Compiler<'c> {
         let scoped_locals = self
             .locals
             .iter()
-            .filter(|local| local.depth > self.scope_depth)
+            .filter(|local| {
+                match local {
+                    Local::Filled(_, depth ) => {
+                        depth.gt(&self.scope_depth)
+                    },
+                    _ => false
+                }
+            })
             .count();
 
         for _ in 1..=scoped_locals {
@@ -499,9 +658,25 @@ impl<'c> Compiler<'c> {
         value.parse::<f64>().unwrap()
     }
 
-    fn number(&mut self, can_assign: bool) {
+    fn number(&mut self, _can_assign: bool) {
         let value: f64 = self.str_to_float(self.parser.previous.unwrap());
         self.emit_constant(Value::from(value));
+    }
+
+    fn and(&mut self, _can_assign: bool) {
+        let offset = self.emit_jump(OpCode::JumpIfFalse);
+        self.emit_opcode(OpCode::Pop);
+        self.parse_precedence(Precedence::And);
+        self.patch_jump(offset);
+    }
+
+    fn or(&mut self, _can_assign: bool) {
+        let else_jump_offset = self.emit_jump(OpCode::JumpIfFalse);
+        let end_jump_offset = self.emit_jump(OpCode::Jump);
+        self.patch_jump(else_jump_offset);
+        self.emit_opcode(OpCode::Pop);
+        self.parse_precedence(Precedence::Or);
+        self.patch_jump(end_jump_offset);
     }
 
     fn string(&mut self, can_assign: bool, emit_constant: bool) -> usize {
@@ -541,12 +716,12 @@ impl<'c> Compiler<'c> {
         }
     }
 
-    fn grouping(&mut self, can_assign: bool) {
+    fn grouping(&mut self, _can_assign: bool) {
         self.expression();
         self.consume(TokenType::RightParen, "Expect ')' after expression");
     }
 
-    fn unary(&mut self, can_assign: bool) {
+    fn unary(&mut self, _can_assign: bool) {
         let operator_type = self.parser.previous.unwrap().token_type;
 
         // we put expression first because we would first evaluate the operand
@@ -581,7 +756,7 @@ impl<'c> Compiler<'c> {
         parse_rule(token_type)
     }
 
-    fn binary(&mut self, can_assign: bool) {
+    fn binary(&mut self, _can_assign: bool) {
         let operator_type = self.parser.previous.unwrap().token_type;
         let rule = self.get_rule(operator_type);
         let next_op: Precedence = num::FromPrimitive::from_u8((rule.precedence) as u8 + 1).unwrap();
@@ -589,7 +764,7 @@ impl<'c> Compiler<'c> {
         self.emit_operator(operator_type);
     }
 
-    fn literal(&mut self, can_assign: bool) {
+    fn literal(&mut self, _can_assign: bool) {
         let token_type = self.parser.previous.unwrap().token_type;
         match token_type {
             TokenType::False => self.emit_opcode(OpCode::False),

@@ -1,5 +1,5 @@
 use crate::common::{OpCode, Value};
-use crate::{debug};
+use crate::debug;
 use crate::value::{self, ValueArray};
 extern crate num;
 #[derive(Debug)]
@@ -33,7 +33,7 @@ impl<'a> Chunk {
         let index = self.add_constant(value);
         // for any index constant that doesn't fit in u8, we store all bytes
         if index <= 255 {
-            self.write_chunk(OpCode::Constant as u8, line);            
+            self.write_chunk(OpCode::Constant as u8, line);
         } else {
             self.write_chunk(OpCode::ConstantLong as u8, line);
         }
@@ -42,9 +42,9 @@ impl<'a> Chunk {
     }
 
     pub(crate) fn write_index(&mut self, index: usize, line: u32) {
-        if index <= 255 {            
+        if index <= 255 {
             self.write_chunk(index as u8, line);
-        } else {            
+        } else {
             let bytes = index.to_ne_bytes();
             for byte in bytes.iter() {
                 self.write_chunk(*byte, line);
@@ -87,8 +87,15 @@ impl<'a> Chunk {
             | Some(OpCode::DefineGlobalVariable)
             | Some(OpCode::GetGloablVariable)
             | Some(OpCode::SetGlobalVariable)
+            | Some(OpCode::GetLocalVariable)
+            | Some(OpCode::SetLocalVariable)
+            | Some(OpCode::Pop)
             | Some(OpCode::Divide) => {
                 debug::debug(format!("opcode: {:?}", opcode.unwrap()), true);
+            }
+            Some(OpCode::Jump) | Some(OpCode::JumpIfFalse) | Some(OpCode::Loop) => {
+                self.jump_instruction(opcode.unwrap(), offset);
+                return offset + 3; // 1 byte for opcode 2 for the jump offset
             }
             Some(OpCode::Constant) => {
                 let constant_index = self.code.get(offset + 1).unwrap();
@@ -108,10 +115,25 @@ impl<'a> Chunk {
                 return offset + 9;
             }
             _ => {
-                debug::info("Unknown instruction".to_string());
+                debug::info(format!("Unknown instruction: {:?}", opcode));
             }
         }
         offset + 1
+    }
+
+    fn jump_instruction(&self, instruction: OpCode, offset: usize) {
+        debug::info(format!("opcode: {:?}", instruction));
+        debug::info(format!("with jump: {:?}", self.get_offset(offset)));
+    }
+
+    fn get_offset(&self, offset: usize) -> u16 {
+        let offset_bytes: [u8; 2] = [
+            self.code[(offset + 2) as usize],
+            self.code[(offset + 1) as usize],
+        ];
+        println!("offset bytes: {:?}", offset_bytes);
+        // adding 2 because we read offset bytes
+        u16::from_ne_bytes(offset_bytes)
     }
 
     fn print_debug_info(&self, opcode: OpCode, constant_index: usize) {

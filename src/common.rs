@@ -29,6 +29,9 @@ pub(crate) enum OpCode {
     GetGloablVariable = 20,
     SetLocalVariable = 21,
     GetLocalVariable = 22,
+    JumpIfFalse = 23,
+    Jump = 24,
+    Loop = 25
 }
 
 #[derive(Debug, Clone)]

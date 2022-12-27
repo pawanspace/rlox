@@ -66,12 +66,14 @@ fn repl() {
 }
 
 fn main() {
-    env::set_var("RUST_BACKTRACE", "full");
-    let args = Cli::parse();
-    if args.path.as_os_str().is_empty() {
-        repl();
-    } else {
-        run_file(args.path);
-    }
+    // env::set_var("RUST_BACKTRACE", "full");
+    // let args = Cli::parse();
+    // if args.path.as_os_str().is_empty() {
+    //     repl();
+    // } else {
+        //run_file(args.path);
+        
+    run_file(PathBuf::from("first.lox"));
+    //}
 }
 

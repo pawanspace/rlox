@@ -232,13 +232,11 @@ impl Scanner {
         loop {
             match self.peek() {
                 ' ' | '\r' | '\t' => {
-                    self.advance();
-                    break;
+                    self.advance();                    
                 }
                 '\n' => {
                     self.line += 1;
-                    self.advance();
-                    return;
+                    self.advance();                    
                 }
                 '/' => {
                     // handle comments
@@ -248,11 +246,8 @@ impl Scanner {
                         while self.peek() != '\n' && !self.is_at_end() {
                             self.advance();
                         }
-                    } else {
-                        return;
                     }
                 }
-
                 _ => {
                     return;
                 }

@@ -7,6 +7,7 @@ use crate::scanner::Scanner;
 use crate::{compiler, memory};
 extern crate num;
 
+
 const STACK_MAX: usize = 512;
 
 #[derive(Debug)]
@@ -55,17 +56,16 @@ macro_rules! READ_FAT_PTR {
 }
 
 macro_rules! BINARY_OP {
-    ($self:ident, $op:tt, $t_type:ty) => {{
+    ($self:ident, $op:tt) => {{
         let peek_0 = $self.peek(0);
-        let peek_1 = $self.peek(1);
+        let peek_1 = $self.peek(1);        
         if !peek_0.is_number() || !peek_1.is_number() {
             $self.runtime_error("Expected two numbers for binary operation.");
             return InterpretResult::InterpretRuntimeError;
         }
-
         let right_val = $self.pop();
         let left_val = $self.pop();
-        $self.push(Value::from(Into::<$t_type>::into(left_val.clone()) $op Into::<$t_type>::into(right_val.clone())));
+        $self.push(Value::from(Into::<f64>::into(left_val.clone()) $op Into::<f64>::into(right_val.clone())));        
     }}
 }
 
@@ -119,7 +119,7 @@ impl VM {
         self.stack[self.stack_top].as_ref().unwrap().clone()
     }
 
-    fn peek(&mut self, distance: usize) -> Value {
+    fn peek(&self, distance: usize) -> Value {
         self.stack[self.stack_top - 1 - distance]
             .as_ref()
             .unwrap()
@@ -135,11 +135,13 @@ impl VM {
             let instruction = READ_BYTE!(self);
             let opcode = num::FromPrimitive::from_u8(instruction);
             if debug::is_debug() && !matches!(opcode, None) {
-                println!("##### Stack[Start] ###### \n");
-                for i in 0..self.stack.len() {
-                    print!("[{:?}] ", self.stack[i]);
+                if debug::print_stack()  {
+                    println!("##### Stack[Start] ###### \n");
+                    for i in 0..self.stack.len() {
+                        print!("[{:?}] ", self.stack[i]);
+                    }
+                    println!("\n\n ##### Stack[End] ######");
                 }
-                println!("\n\n ##### Stack[End] ######");
 
                 self.chunk
                     .as_ref()
@@ -174,7 +176,7 @@ impl VM {
                                 return InterpretResult::InterpretRuntimeError;
                             }
                         }
-                        Value::Number(_value) => BINARY_OP!(self, +, f64),
+                        Value::Number(_value) => BINARY_OP!(self, +),
                         _ => {
                             self.runtime_error("Unknown type detected for Add operation");
                             return InterpretResult::InterpretOk;
@@ -182,19 +184,19 @@ impl VM {
                     }
                 }
                 Some(OpCode::Multiply) => {
-                    BINARY_OP!(self, *, f64);
+                    BINARY_OP!(self, *);
                 }
                 Some(OpCode::Subtract) => {
-                    BINARY_OP!(self, -, f64);
+                    BINARY_OP!(self, -);
                 }
                 Some(OpCode::Divide) => {
-                    BINARY_OP!(self, /, f64);
+                    BINARY_OP!(self, /);
                 }
                 Some(OpCode::Greater) => {
-                    BINARY_OP!(self, >, bool);
+                    BINARY_OP!(self, >);
                 }
                 Some(OpCode::Less) => {
-                    BINARY_OP!(self, <, bool);
+                    BINARY_OP!(self, <);
                 }
                 Some(OpCode::Equal) => {
                     let left = self.pop();
@@ -232,6 +234,20 @@ impl VM {
                 Some(OpCode::Pop) => {
                     self.pop();
                 },
+                Some(OpCode::JumpIfFalse) => {
+                    let offset = self.get_offset();
+                    if self.is_falsey(self.peek(0)) {
+                        self.ip += offset as i32;
+                    }
+                },
+                Some(OpCode::Jump) => {
+                    let offset = self.get_offset();                    
+                    self.ip += offset as i32;                    
+                },
+                Some(OpCode::Loop) => {
+                    let offset = self.get_offset();                    
+                    self.ip -= offset as i32;                    
+                },
                 Some(OpCode::GetLocalVariable) => {
                     let b = READ_BYTE!(self);
                     let val = self.stack[b as usize].clone().unwrap();
@@ -239,7 +255,7 @@ impl VM {
                 },
                 Some(OpCode::SetLocalVariable) => {
                     let b = READ_BYTE!(self);
-                    self.stack[b as usize] = Some(self.pop());                                        
+                    self.stack[b as usize] = Some(self.peek(0));                                        
                 },
                 Some(OpCode::GetGloablVariable) => {
                     let constant = READ_CONSTANT!(self).unwrap().clone();
@@ -250,11 +266,26 @@ impl VM {
 
                     match value {
                         Some(val) => {
-                            let obj = Into::<Obj>::into(val.clone());
-                            let ptr = Into::<FatPointer>::into(obj);
-                            let c_value = memory::read_string(ptr.ptr, ptr.size);
-                            print!("Value pushing to stack {:?}", c_value);
-                            self.push(val.clone())
+                            match value {
+                                Some(Value::Boolean(v)) => {
+                                    println!("Boolean value pushing to stack {:?}", v);
+                                    self.push(val.clone());
+                                },
+                                Some(Value::Number(v)) => {
+                                    println!("Number value pushing to stack {:?}", v);
+                                    self.push(val.clone());
+                                },
+                                Some(Value::Obj(obj)) => {                                    
+                                    let ptr = Into::<FatPointer>::into(obj.clone());
+                                    let c_value = memory::read_string(ptr.ptr, ptr.size);
+                                    println!("Object value pushing to stack {:?}", c_value);
+                                    self.push(val.clone());
+                                }
+                                _ => {
+                                    println!("Unknown value pushing to stack" );
+                                    self.push(val.clone());
+                                }
+                            }                          
                         },
                         None => {
                             let key = memory::read_string(ptr, size);
@@ -287,6 +318,14 @@ impl VM {
                 }
             }
         }
+    }
+
+    fn get_offset(&mut self) -> u16 {
+        let chunk = self.chunk.as_ref().unwrap();
+        let offset_bytes: [u8; 2] = [chunk.code[(self.ip + 1) as usize], chunk.code[(self.ip) as usize]];
+        self.ip = self.ip + 2;
+        // adding 2 because we read offset bytes
+        u16::from_ne_bytes(offset_bytes)       
     }
 
     fn get_variable_value(&self, variable_name: FatPointer) -> Option<&Value> {
