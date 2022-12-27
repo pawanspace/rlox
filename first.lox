@@ -10,3 +10,15 @@ while (i < 15) {
 for (var i = 8; i < 10; i = i + 1) {
     print "index";
 }
+
+if (i == 10 and a == true) {
+    print "first if";
+}
+
+if (i != 10 and a == true) {
+    print "second if";
+}
+
+if (i == 10 or a == true) {
+    print "third if";
+}

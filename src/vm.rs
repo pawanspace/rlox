@@ -257,7 +257,7 @@ impl VM {
                     let b = READ_BYTE!(self);
                     self.stack[b as usize] = Some(self.peek(0));                                        
                 },
-                Some(OpCode::GetGloablVariable) => {
+                Some(OpCode::GetGlobalVariable) => {
                     let constant = READ_CONSTANT!(self).unwrap().clone();
                     let variable_name = READ_FAT_PTR!(self, constant);   
                     let size = variable_name.size;        

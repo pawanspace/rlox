@@ -85,7 +85,7 @@ impl<'a> Chunk {
             | Some(OpCode::Equal)
             | Some(OpCode::Print)
             | Some(OpCode::DefineGlobalVariable)
-            | Some(OpCode::GetGloablVariable)
+            | Some(OpCode::GetGlobalVariable)
             | Some(OpCode::SetGlobalVariable)
             | Some(OpCode::GetLocalVariable)
             | Some(OpCode::SetLocalVariable)

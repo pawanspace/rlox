@@ -26,7 +26,7 @@ pub(crate) enum OpCode {
     Pop = 17,
     DefineGlobalVariable = 18,
     SetGlobalVariable = 19,
-    GetGloablVariable = 20,
+    GetGlobalVariable = 20,
     SetLocalVariable = 21,
     GetLocalVariable = 22,
     JumpIfFalse = 23,

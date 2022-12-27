@@ -308,7 +308,7 @@ impl<'c> Compiler<'c> {
             let index = self.identifier();
             existing_index = index as i32;
             set_op = OpCode::SetGlobalVariable;
-            get_op = OpCode::GetGloablVariable;
+            get_op = OpCode::GetGlobalVariable;
         }
 
         if can_assign && self.match_token(TokenType::Equal) {
@@ -504,7 +504,7 @@ impl<'c> Compiler<'c> {
         self.scope_depth += 1;
     }
 
-    fn end_scope(&mut self) {
+    fn end_scope(&mut self) {      
         self.scope_depth -= 1;
         let scoped_locals = self
             .locals
@@ -518,7 +518,9 @@ impl<'c> Compiler<'c> {
                 }
             })
             .count();
-
+        if self.local_count == 0 {
+            return;
+        }
         for _ in 1..=scoped_locals {
             self.emit_opcode(OpCode::Pop);
         }
