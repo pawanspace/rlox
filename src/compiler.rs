@@ -271,7 +271,11 @@ impl<'c> Compiler<'c> {
         }
     }
 
-    fn resolve_local(&mut self, token: Token) -> i32 {        
+    fn resolve_local(&mut self, token: Token) -> i32 {  
+        if self.local_count <= 0 {
+            return -1;
+        }      
+        
         for (idx, existing) in self.locals.iter().enumerate().rev() {
             match existing {
                 Local::Filled(existing_token, depth) => {
