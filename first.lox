@@ -23,3 +23,9 @@ if (i != 10 and a == true) {
 if (i == 10 or a == true) {
     print "third if";
 }
+
+fun working() {
+    print "working well I guess!";
+}
+
+print working;

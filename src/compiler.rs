@@ -235,8 +235,11 @@ impl<'c> Compiler<'c> {
 
     fn fun_decl(&mut self) {
         let index = self.parse_variable();
+        let prev_token = self.parser.previous.unwrap();
         self.function();
-        self.define_variable(index);
+        self.emit_opcode(OpCode::DefineGlobalVariable);
+        self.current_chunk()
+            .write_index(index, prev_token.line);
     }
 
     fn function(&mut self) {        
@@ -272,9 +275,10 @@ impl<'c> Compiler<'c> {
             "Expect '{' at the beginning  of function body"
         );
         self.block();
-        self.end_scope();        
-        self.emit_constant(Value::from(self.function.clone()));
-        self.function = enclosing;
+        self.end_scope();   
+        let new_function = self.function.clone();
+        self.function = enclosing;     
+        self.emit_constant(Value::from(new_function));
     }
 
     fn parse_and_define_parameter(&mut self, function: &mut Function) {
