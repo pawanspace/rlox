@@ -2,7 +2,7 @@ use crate::common::{OpCode, Value};
 use crate::debug;
 use crate::value::{self, ValueArray};
 extern crate num;
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Chunk {
     pub code: Vec<u8>,
     pub constants: value::ValueArray,

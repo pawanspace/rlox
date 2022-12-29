@@ -1,5 +1,5 @@
 use crate::chunk::Chunk;
-use crate::common::{FatPointer, Obj, OpCode, Value};
+use crate::common::{FatPointer, Obj, OpCode, Value, Function};
 use crate::hash_map::Table;
 use crate::hasher;
 use crate::memory;
@@ -157,6 +157,7 @@ pub(crate) struct Compiler<'c> {
     chunk: Box<Chunk>,
     source: String,
     table: &'c mut Table<Value>,
+    function: Obj,
     locals: Vec<Local>,
     local_count: usize,
     scope_depth: usize,
@@ -177,7 +178,7 @@ impl<'c> Compiler<'c> {
 
         let mut locals = vec![];
         locals.resize(u8::MAX as usize, Local::Empty);
-
+        
         Compiler {
             scanner,
             parser,
@@ -185,12 +186,13 @@ impl<'c> Compiler<'c> {
             source: "".to_string(),
             table: table,
             locals,
-            local_count: 0,
+            local_count: 1, // starting with 1 take first spot for top level function
             scope_depth: 0,
+            function: Obj::Fun(Function::new_function())
         }
     }
 
-    pub(crate) fn compile(&mut self, source: String) -> (bool, Box<Chunk>) {
+    pub(crate) fn compile(&mut self, source: String) -> (bool, Obj) {
         self.source = source;
         let chars: Vec<char> = self.source.chars().collect();
         self.scanner.refresh(0, self.source.len(), chars);
@@ -201,13 +203,7 @@ impl<'c> Compiler<'c> {
         self.end_compiler();
         (
             self.parser.had_error,
-            Box::new(Chunk {
-                code: self.chunk.code.clone(),
-                constants: ValueArray {
-                    values: self.chunk.constants.values.clone(),
-                },
-                lines: self.chunk.lines.clone(),
-            }),
+            self.function.clone()
         )
     }
 
@@ -310,20 +306,20 @@ impl<'c> Compiler<'c> {
             set_op = OpCode::SetGlobalVariable;
             get_op = OpCode::GetGlobalVariable;
         }
-
+        let prev_token = self.previous_token();
         if can_assign && self.match_token(TokenType::Equal) {
             self.expression();
-            self.emit_opcode(set_op);
-            self.chunk
+            self.emit_opcode(set_op);            
+            self.current_chunk()
                 // @type_conversion this conversion here to usize will result in usize::MAX
                 // when existing_index is -1
-                .write_index(existing_index as usize, self.parser.previous.unwrap().line);
+                .write_index(existing_index as usize, prev_token.line);
         } else {
             self.emit_opcode(get_op);
-            self.chunk
+            self.current_chunk()
                 // @type_conversion this conversion here to usize will result in usize::MAX
                 // when existing_index is -1
-                .write_index(existing_index as usize, self.parser.previous.unwrap().line);
+                .write_index(existing_index as usize, prev_token.line);
         }
     }
 
@@ -331,10 +327,10 @@ impl<'c> Compiler<'c> {
         if self.scope_depth > 0 {
             return;
         }
-
+        let prev_token = self.previous_token();
         self.emit_opcode(OpCode::DefineGlobalVariable);
-        self.chunk
-            .write_index(index, self.parser.previous.unwrap().line);
+        self.current_chunk()
+            .write_index(index, prev_token.line);
     }
 
     fn identifier(&mut self) -> usize {
@@ -373,7 +369,7 @@ impl<'c> Compiler<'c> {
         }
         // loop always comes back to condition after increment if there is increment
         // loop_start will move to inc_start if increment expression is available.
-        let mut loop_start = self.chunk.code.len();
+        let mut loop_start = self.current_chunk().code.len();
 
         // optional condition
         let mut end_loop = usize::MAX;
@@ -388,7 +384,7 @@ impl<'c> Compiler<'c> {
         // optional increment block
         if !self.match_token(TokenType::RightParen) {
             let body_jump = self.emit_jump(OpCode::Jump);
-            let inc_start = self.chunk.code.len();
+            let inc_start = self.current_chunk().code.len();
             self.expression();
             self.emit_opcode(OpCode::Pop);
             self.consume(
@@ -413,7 +409,7 @@ impl<'c> Compiler<'c> {
     }
 
     fn while_stmt(&mut self) {
-        let loop_start = self.chunk.code.len();
+        let loop_start = self.current_chunk().code.len();
         self.consume(TokenType::LeftParen, "Expect '(' after if statement");
         self.expression();
         self.consume(
@@ -430,7 +426,7 @@ impl<'c> Compiler<'c> {
 
     fn emit_loop(&mut self, loop_start: usize) {
         self.emit_opcode(OpCode::Loop);
-        let jump = (self.chunk.code.len() - loop_start + 2) as u16;
+        let jump = (self.current_chunk().code.len() - loop_start + 2) as u16;
 
         if jump > u16::MAX {
             self.error(format!("Can not jump more than {:?} bytes", u16::MAX).as_str());
@@ -467,7 +463,7 @@ impl<'c> Compiler<'c> {
         self.emit_byte(0xff);
         self.emit_byte(0xff);
         // return index to where we emit two bytes for offset operand.
-        self.chunk.code.len() - 2
+        self.current_chunk().code.len() - 2
     }
 
     fn patch_jump(&mut self, offset: usize) {
@@ -479,16 +475,16 @@ impl<'c> Compiler<'c> {
         // 12 - 6 - 2 = 4, we need to skip 4 bytes which makes sense because
         // we did insert 4 instructions as part of if block.
         // -2 to adjust for the bytecode for the jump offset itself.
-        let jump = (self.chunk.code.len() - offset - 2) as u16;
+        let jump = (self.current_chunk().code.len() - offset - 2) as u16;
 
         if jump > u16::MAX {
             self.error(format!("Can not jump more than {:?} bytes", u16::MAX).as_str());
         } else {
             // get msb 8 bits from the offset and mask with 0xff to
             // make other bits are reset
-            self.chunk.code[offset] = ((jump >> 8) & 0xff) as u8;
+            self.current_chunk().code[offset] = ((jump >> 8) & 0xff) as u8;
             // get lsb 8 bits
-            self.chunk.code[offset + 1] = (jump & 0xff) as u8;
+            self.current_chunk().code[offset + 1] = (jump & 0xff) as u8;
         }
     }
 
@@ -619,8 +615,9 @@ impl<'c> Compiler<'c> {
     }
 
     fn emit_byte(&mut self, byte: u8) {
-        self.chunk
-            .write_chunk(byte, self.parser.previous.unwrap().line);
+        let prev_token = self.previous_token();
+        self.current_chunk()
+            .write_chunk(byte, prev_token.line);
     }
 
     fn emit_bytes(&mut self, byte_1: u8, byte_2: u8) {
@@ -639,7 +636,7 @@ impl<'c> Compiler<'c> {
 
     fn end_compiler(&mut self) {
         self.emit_return();
-        //self.chunk.disassemble_chunk("Compiler");
+        //self.current_chunk().disassemble_chunk("Compiler");
     }
 
     fn emit_return(&mut self) {
@@ -651,8 +648,9 @@ impl<'c> Compiler<'c> {
     }
 
     fn emit_constant(&mut self, value: Value) -> usize {
-        self.chunk
-            .write_constant(value, self.parser.previous.unwrap().line)
+        let prev_token = self.previous_token();
+        self.current_chunk()
+            .write_constant(value, prev_token.line)
     }
 
     fn str_to_float(&mut self, token: Token) -> f64 {
@@ -695,7 +693,7 @@ impl<'c> Compiler<'c> {
                 if emit_constant {
                     self.emit_constant(value)
                 } else {
-                    self.chunk.add_constant(value)
+                    self.current_chunk().add_constant(value)
                 }
             }
             None => {
@@ -712,7 +710,7 @@ impl<'c> Compiler<'c> {
                 if emit_constant {
                     self.emit_constant(value)
                 } else {
-                    self.chunk.add_constant(value)
+                    self.current_chunk().add_constant(value)
                 }
             }
         }
@@ -811,5 +809,13 @@ impl<'c> Compiler<'c> {
         if can_assign && self.match_token(TokenType::Equal) {
             self.error("Invalid assignment target");
         }
+    }
+
+    fn current_chunk(&mut self) -> &mut Chunk {                
+        self.function.get_func_chunk()
+    }
+
+    fn previous_token(&self) -> Token {                
+        self.parser.previous.unwrap()
     }
 }

@@ -1,3 +1,4 @@
+use std::time::Instant;
 use clap::Parser;
 use std::{env, fs};
 
@@ -14,6 +15,7 @@ mod memory;
 mod scanner;
 mod value;
 mod vm;
+mod metrics;
 #[derive(Parser)]
 struct Cli {
     // source file path
@@ -65,7 +67,7 @@ fn repl() {
     }
 }
 
-fn main() {
+fn main() {    
     // env::set_var("RUST_BACKTRACE", "full");
     // let args = Cli::parse();
     // if args.path.as_os_str().is_empty() {
@@ -73,7 +75,8 @@ fn main() {
     // } else {
         //run_file(args.path);
         
-    run_file(PathBuf::from("first.lox"));
+    metrics::record("Total time".to_string(), || run_file(PathBuf::from("first.lox")));    
+    metrics::display();
     //}
 }
 

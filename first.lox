@@ -1,8 +1,9 @@
 var a = true;
+var i = 10;
 if (a == true) { 
   print a;
 }
-var i = 10;
+
 while (i < 15) {
     print i;
     i = i + 1;

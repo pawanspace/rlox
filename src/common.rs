@@ -1,7 +1,7 @@
 use num_derive::FromPrimitive;
 use std::fmt::Debug;
 
-use crate::{hasher, memory, scanner::Token};
+use crate::{hasher, memory, scanner::Token, chunk::Chunk};
 
 #[derive(Debug)]
 #[repr(u8)]
@@ -146,8 +146,34 @@ pub(crate) struct FatPointer {
 }
 
 #[derive(Debug, Clone)]
+pub(crate) struct Function {
+    arity: u8,
+    pub(crate) chunk: Chunk,
+    name: Option<FatPointer>,  
+    pub(crate) func_type: FunctionType,
+}
+
+impl Function {
+    pub(crate) fn new_function() -> Function {        
+        Function {
+            arity: 0,
+            chunk: Chunk::init(),
+            name: None,
+            func_type: FunctionType::Script
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum FunctionType {
+    Function,
+    Script
+}
+
+#[derive(Debug, Clone)]
 pub(crate) enum Obj {
     Str(FatPointer),
+    Fun(Function),
     Nil,
 }
 
@@ -160,6 +186,15 @@ impl Obj {
     #[inline]
     pub fn is_nil(&self) -> bool {
         matches!(self, Obj::Nil)
+    }
+
+    pub fn get_func_chunk(&mut self) -> &mut Chunk {
+        match self {
+            Obj::Fun(function) => &mut function.chunk,
+            //@todo @pawanc check if it should be false this can be wrong in most cases
+            // may be we should throw error
+            _ => panic!("Not able to convert to function from object")
+        }
     }
 }
 
@@ -206,6 +241,17 @@ impl Into<FatPointer> for Obj {
                 size: 0 as usize,
                 hash: 0,
             },
+        }
+    }
+}
+
+impl Into<Function> for Obj {
+    fn into(self) -> Function {
+        match self {
+            Obj::Fun(function) => function,
+            //@todo @pawanc check if it should be false this can be wrong in most cases
+            // may be we should throw error
+            _ => panic!("Not able to convert to function from object")
         }
     }
 }
