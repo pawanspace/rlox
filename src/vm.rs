@@ -386,12 +386,11 @@ impl VM {
         self.run()
     }
 
-    pub(crate) fn interpret<'m>(&mut self, source: String, chunk: Chunk) -> InterpretResult {
-        let chunk_on_heap = Box::new(chunk);
+    pub(crate) fn interpret<'m>(&mut self, source: String) -> InterpretResult {        
         let chars: Vec<char> = source.chars().collect();
         let scanner = Scanner::init(0, 0, chars);
 
-        let mut compiler = compiler::Compiler::init(scanner, chunk_on_heap, &mut self.table);
+        let mut compiler = compiler::Compiler::init(scanner, &mut self.table);
 
         let (had_error, function_obj) = metrics::record("Compiler time".to_string(), || {
             compiler.compile(source.clone())

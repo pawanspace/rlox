@@ -1,5 +1,7 @@
+use std::clone;
+
 use crate::chunk::Chunk;
-use crate::common::{FatPointer, Obj, OpCode, Value, Function};
+use crate::common::{FatPointer, Obj, OpCode, Value, Function, FunctionType};
 use crate::hash_map::Table;
 use crate::hasher;
 use crate::memory;
@@ -153,8 +155,7 @@ pub(crate) enum Local {
 
 pub(crate) struct Compiler<'c> {
     scanner: Scanner,
-    parser: Parser,
-    chunk: Box<Chunk>,
+    parser: Parser,    
     source: String,
     table: &'c mut Table<Value>,
     function: Obj,
@@ -165,8 +166,7 @@ pub(crate) struct Compiler<'c> {
 
 impl<'c> Compiler<'c> {
     pub(crate) fn init(
-        scanner: Scanner,
-        chunk: Box<Chunk>,
+        scanner: Scanner,        
         table: &'c mut Table<Value>,
     ) -> Compiler {
         let parser = Parser {
@@ -181,14 +181,13 @@ impl<'c> Compiler<'c> {
         
         Compiler {
             scanner,
-            parser,
-            chunk,
+            parser,            
             source: "".to_string(),
-            table: table,
+            table,
             locals,
             local_count: 1, // starting with 1 take first spot for top level function
             scope_depth: 0,
-            function: Obj::Fun(Function::new_function())
+            function: Obj::Fun(Function::new_function(FunctionType::Script))
         }
     }
 
@@ -221,7 +220,9 @@ impl<'c> Compiler<'c> {
     }
 
     fn declaration(&mut self) {
-        if self.match_token(TokenType::Var) {
+        if self.match_token(TokenType::Fun) {
+            self.fun_decl();
+        } else if self.match_token(TokenType::Var) {
             self.variable_decl();
         } else {
             self.statement();
@@ -232,15 +233,61 @@ impl<'c> Compiler<'c> {
         }
     }
 
-    fn variable_decl(&mut self) {
-        self.consume(TokenType::Identifier, "Expected name after variable");
-        self.declare_variable();
+    fn fun_decl(&mut self) {
+        let index = self.parse_variable();
+        self.function();
+        self.define_variable(index);
+    }
 
-        let mut index = 0;
-        if self.scope_depth <= 0 {
-            index = self.identifier();
+    fn function(&mut self) {        
+        let enclosing = self.function.clone();
+        let mut function = Function::new_function(FunctionType::Function);        
+        let token = self.parser.previous.unwrap();        
+        let str_value = &mut self.source[token.start..token.start + token.length];
+        let hash_value = hasher::hash(str_value);
+        let exiting_value = self.table.find_entry_with_value(str_value, hash_value);
+        function.name = exiting_value.cloned();
+        let function_obj = Obj::Fun(Function::new_function(FunctionType::Function));        
+        self.function = function_obj;
+        self.begin_scope();
+        self.consume(TokenType::LeftParen, "Expect '(' after function name");
+        //@todo parse arguments
+        if !self.check(TokenType::RightParen) {
+            self.parse_and_define_parameter(&mut function);
+            loop {
+                match self.match_token(TokenType::Comma) {
+                    true => {
+                        self.parse_and_define_parameter(&mut function);
+                    }, 
+                    false => break
+                } 
+            }            
         }
+        self.consume(
+            TokenType::RightParen,
+            "Expect ')' at the end of function params"
+        );
+        self.consume(
+            TokenType::LeftBrace,
+            "Expect '{' at the beginning  of function body"
+        );
+        self.block();
+        self.end_scope();        
+        self.emit_constant(Value::from(self.function.clone()));
+        self.function = enclosing;
+    }
 
+    fn parse_and_define_parameter(&mut self, function: &mut Function) {
+        function.arity += 1;
+        if function.arity >= 255 {
+            self.error_at_current("Can't have more than 255 parameters.");
+        }
+        let param_index = self.parse_variable();
+        self.define_variable(param_index);
+    }
+
+    fn variable_decl(&mut self) {
+        let index = self.parse_variable();
         if self.match_token(TokenType::Equal) {
             self.expression();
         } else {
@@ -249,6 +296,16 @@ impl<'c> Compiler<'c> {
 
         self.consume_semicolon();
         self.define_variable(index)
+    }
+
+    fn parse_variable(&mut self) -> usize {
+        self.consume(TokenType::Identifier, "Expected name after variable");
+        self.declare_variable();
+        let mut index = 0;
+        if self.scope_depth <= 0 {
+            index = self.identifier();
+        }
+        index
     }
 
     fn declare_variable(&mut self) {

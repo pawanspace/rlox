@@ -33,9 +33,8 @@ fn run_file(path: PathBuf) {
         eprintln!("Could not read file: {:?}", path);
         std::process::exit(74);
     }
-    let mut vm = vm::VM::init();
-    let chunk = chunk::Chunk::init();
-    vm.interpret(contents.to_string(), chunk);
+    let mut vm = vm::VM::init();    
+    vm.interpret(contents.to_string());
 }
 
 struct Repl<'a> {
@@ -53,9 +52,8 @@ impl<'a> Repl<'a> {
         std::io::stdout().flush().unwrap();
         std::io::stdin()
             .read_line(&mut line)
-            .expect("Error: could not read input");
-        let chunk = chunk::Chunk::init();
-        self.vm.interpret(line.to_string(), chunk);
+            .expect("Error: could not read input");        
+        self.vm.interpret(line.to_string());
     }
 }
 

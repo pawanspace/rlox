@@ -147,19 +147,19 @@ pub(crate) struct FatPointer {
 
 #[derive(Debug, Clone)]
 pub(crate) struct Function {
-    arity: u8,
+    pub(crate) arity: u8,
     pub(crate) chunk: Chunk,
-    name: Option<FatPointer>,  
+    pub(crate) name: Option<FatPointer>,  
     pub(crate) func_type: FunctionType,
 }
 
 impl Function {
-    pub(crate) fn new_function() -> Function {        
+    pub(crate) fn new_function(fun_type: FunctionType) -> Function {        
         Function {
             arity: 0,
             chunk: Chunk::init(),
             name: None,
-            func_type: FunctionType::Script
+            func_type: fun_type
         }
     }
 }
