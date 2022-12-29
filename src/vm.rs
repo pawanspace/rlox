@@ -25,16 +25,8 @@ pub(crate) struct VM {
 pub(crate) struct CallFrame {
     function: Function,
     ip: usize,
-    slots: Vec<Option<Value>>,
+    cf_stack_top: usize,
 }
-
-impl CallFrame {
-    fn push(&mut self, vm: &mut VM, value: Value, index: usize) {
-        self.slots[index] = Some(value.clone());
-        //vm.push(value.clone());
-    }
-}
-
 
 pub enum InterpretResult {
     InterpretOk,
@@ -221,8 +213,7 @@ impl VM {
                     self.push(Value::from(self.is_equal(left, right)));
                 }
                 Some(OpCode::Constant) => {
-                    let constant = READ_CONSTANT!(self, current_frame);
-                    current_frame.slots[self.stack_top] = Some(constant.unwrap().clone());
+                    let constant = READ_CONSTANT!(self, current_frame);                    
                     self.push((*constant.unwrap()).clone());                    
                 }
                 Some(OpCode::False) => {
@@ -268,12 +259,12 @@ impl VM {
                 },
                 Some(OpCode::GetLocalVariable) => {
                     let b = READ_BYTE!(self, current_frame);
-                    let val = current_frame.slots[b as usize].clone().unwrap();
+                    let val = self.stack[current_frame.cf_stack_top + b as usize].clone().unwrap();
                     self.push(val.clone());
                 }
                 Some(OpCode::SetLocalVariable) => {
                     let b = READ_BYTE!(self, current_frame);
-                    current_frame.push(self, self.peek(0), b as usize);                    
+                    self.stack[current_frame.cf_stack_top + b as usize] = Some(self.peek(0));                    
                 }
                 Some(OpCode::GetGlobalVariable) => {
                     let constant = READ_CONSTANT!(self, current_frame).unwrap().clone();
@@ -415,7 +406,7 @@ impl VM {
         self.call_frames.push(CallFrame {
             function,
             ip: 0, //@todo check if this value should be 0 or not
-            slots: self.stack.clone(),
+            cf_stack_top: 0,
         });
         self.frame_count += 1;
         metrics::record("VM run time".to_string(), || self.run())
