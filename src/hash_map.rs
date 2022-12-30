@@ -82,7 +82,7 @@ where
                         let bucket = self.find_bucket(key, &temp_entries);
                         temp_entries[bucket] = Entry::Occupied(key.clone(), value.clone());
                         self.size += 1;
-                    },
+                    }
                     _ => (),
                 }
             }
@@ -117,7 +117,7 @@ where
                         bucket = (bucket + 1) % (self.capacity as u32);
                         continue;
                     }
-                },
+                }
                 Entry::Vacant => None,
                 Entry::TombStone => {
                     bucket = (bucket + 1) % (self.capacity as u32);
@@ -126,7 +126,6 @@ where
             };
         }
     }
-
 
     fn find_entry(&self, key: &FatPointer) -> Option<&T> {
         let mut bucket = key.hash % (self.capacity as u32);
@@ -140,7 +139,7 @@ where
                         bucket = (bucket + 1) % (self.capacity as u32);
                         continue;
                     }
-                },
+                }
                 Entry::Vacant => None,
                 Entry::TombStone => {
                     bucket = (bucket + 1) % (self.capacity as u32);
@@ -159,7 +158,7 @@ where
                 } else {
                     true
                 }
-            },
+            }
             Entry::Vacant | Entry::TombStone => false,
         }
     }
@@ -167,14 +166,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::hasher::hash;
     use super::*;
+    use crate::hasher::hash;
 
     fn create_fat_ptr(value: &mut &str) -> FatPointer {
-        FatPointer{
+        FatPointer {
             ptr: value.to_string().as_mut_ptr(),
             size: value.len(),
-            hash: hash(value)
+            hash: hash(value),
         }
     }
 
@@ -202,7 +201,6 @@ mod tests {
         map.insert(one.clone(), true);
         map.insert(two, true);
         assert!(map.size == 2);
-
 
         map2.insert(one2.clone(), true);
         map2.insert(two2, true);
@@ -244,12 +242,12 @@ mod tests {
         let two = create_fat_ptr(&mut "two");
         let _three = create_fat_ptr(&mut "three");
 
-        map.insert(one.clone(), true); 
+        map.insert(one.clone(), true);
         assert_eq!(map.capacity, 3);
-      
+
         map.insert(two.clone(), false);
         assert_eq!(map.capacity, 3);
-      
+
         map.insert(two.clone(), true);
         assert_eq!(map.capacity, 7);
     }

@@ -197,7 +197,7 @@ impl<'c> Compiler<'c> {
         while !self.match_token(TokenType::Eof) {
             self.declaration();
         }
-        self.end_compiler();        
+        self.end_compiler();
         (self.parser.had_error, self.function.clone())
     }
 
@@ -280,7 +280,7 @@ impl<'c> Compiler<'c> {
                 }
             }
         }
-        
+
         if arity >= 255 {
             compiler.error_at_current("Can't have more than 255 parameters.");
         }
@@ -289,10 +289,10 @@ impl<'c> Compiler<'c> {
             Obj::Fun(mut function) => {
                 function.arity = arity;
                 compiler.function = Obj::Fun(function);
-            },
-            _ => ()
+            }
+            _ => (),
         };
-        
+
         compiler.consume(
             TokenType::RightParen,
             "Expect ')' at the end of function params",
@@ -312,7 +312,7 @@ impl<'c> Compiler<'c> {
         self.emit_constant(Value::from(new_function));
     }
 
-    fn parse_and_define_parameter(&mut self) {        
+    fn parse_and_define_parameter(&mut self) {
         let param_index = self.parse_variable();
         self.define_variable(param_index);
     }
@@ -731,7 +731,7 @@ impl<'c> Compiler<'c> {
         self.emit_opcode(opcode_2);
     }
 
-    fn end_compiler(&mut self) {        
+    fn end_compiler(&mut self) {
         self.emit_return();
         //self.current_chunk().disassemble_chunk("Compiler");
     }

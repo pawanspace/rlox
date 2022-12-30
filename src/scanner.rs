@@ -233,11 +233,11 @@ impl Scanner {
         loop {
             match self.peek() {
                 ' ' | '\r' | '\t' => {
-                    self.advance();                    
+                    self.advance();
                 }
                 '\n' => {
                     self.line += 1;
-                    self.advance();                    
+                    self.advance();
                 }
                 '/' => {
                     // handle comments

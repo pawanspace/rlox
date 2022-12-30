@@ -1,7 +1,7 @@
 use num_derive::FromPrimitive;
 use std::fmt::Debug;
 
-use crate::{hasher, memory, chunk::Chunk};
+use crate::{chunk::Chunk, hasher, memory};
 
 #[derive(Debug)]
 #[repr(u8)]
@@ -32,7 +32,7 @@ pub(crate) enum OpCode {
     JumpIfFalse = 23,
     Jump = 24,
     Loop = 25,
-    Call = 26
+    Call = 26,
 }
 
 #[derive(Debug, Clone)]
@@ -150,17 +150,17 @@ pub(crate) struct FatPointer {
 pub(crate) struct Function {
     pub(crate) arity: u8,
     pub(crate) chunk: Chunk,
-    pub(crate) name: Option<FatPointer>,  
+    pub(crate) name: Option<FatPointer>,
     pub(crate) func_type: FunctionType,
 }
 
 impl Function {
-    pub(crate) fn new_function(fun_type: FunctionType) -> Function {        
+    pub(crate) fn new_function(fun_type: FunctionType) -> Function {
         Function {
             arity: 0,
             chunk: Chunk::init(),
             name: None,
-            func_type: fun_type
+            func_type: fun_type,
         }
     }
 }
@@ -168,7 +168,7 @@ impl Function {
 #[derive(Debug, Clone)]
 pub(crate) enum FunctionType {
     Function,
-    Script
+    Script,
 }
 
 #[derive(Debug, Clone)]
@@ -194,7 +194,7 @@ impl Obj {
             Obj::Fun(function) => &mut function.chunk,
             //@todo @pawanc check if it should be false this can be wrong in most cases
             // may be we should throw error
-            _ => panic!("Not able to convert to function from object")
+            _ => panic!("Not able to convert to function from object"),
         }
     }
 }
@@ -218,7 +218,7 @@ impl From<FatPointer> for Obj {
 }
 
 impl From<&mut str> for Obj {
-    fn from(str_value: &mut str) -> Self {                
+    fn from(str_value: &mut str) -> Self {
         let hash_value = hasher::hash(str_value);
         let str_ptr = memory::allocate::<String>();
         memory::copy(str_value.as_mut_ptr(), str_ptr, str_value.len(), 0);
@@ -252,7 +252,7 @@ impl Into<Function> for Obj {
             Obj::Fun(function) => function,
             //@todo @pawanc check if it should be false this can be wrong in most cases
             // may be we should throw error
-            _ => panic!("Not able to convert to function from object")
+            _ => panic!("Not able to convert to function from object"),
         }
     }
 }

@@ -1,5 +1,5 @@
 use clap::Parser;
-use std::{fs};
+use std::fs;
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -11,10 +11,10 @@ mod debug;
 mod hash_map;
 mod hasher;
 mod memory;
+mod metrics;
 mod scanner;
 mod value;
 mod vm;
-mod metrics;
 #[derive(Parser)]
 struct Cli {
     // source file path
@@ -32,7 +32,7 @@ fn run_file(path: PathBuf) {
         eprintln!("Could not read file: {:?}", path);
         std::process::exit(74);
     }
-    let mut vm = vm::VM::init();    
+    let mut vm = vm::VM::init();
     vm.interpret(contents.to_string());
 }
 
@@ -51,7 +51,7 @@ impl<'a> Repl<'a> {
         std::io::stdout().flush().unwrap();
         std::io::stdin()
             .read_line(&mut line)
-            .expect("Error: could not read input");        
+            .expect("Error: could not read input");
         self.vm.interpret(line.to_string());
     }
 }
@@ -64,16 +64,17 @@ fn repl() {
     }
 }
 
-fn main() {    
+fn main() {
     // env::set_var("RUST_BACKTRACE", "full");
     // let args = Cli::parse();
     // if args.path.as_os_str().is_empty() {
     //     repl();
     // } else {
-        //run_file(args.path);
-        
-    metrics::record("Total time".to_string(), || run_file(PathBuf::from("first.lox")));    
+    //run_file(args.path);
+
+    metrics::record("Total time".to_string(), || {
+        run_file(PathBuf::from("first.lox"))
+    });
     metrics::display();
     //}
 }
-

@@ -1,3 +1,9 @@
+extern crate num;
+
+use colored::Color::TrueColor;
+use colored::{Color, Colorize};
+use rand::prelude::*;
+
 use crate::common::{FatPointer, Function, Obj, OpCode, Value};
 use crate::debug;
 use crate::hash_map::Table;
@@ -5,9 +11,6 @@ use crate::hasher::hash;
 use crate::metrics;
 use crate::scanner::Scanner;
 use crate::{compiler, memory};
-extern crate num;
-use colored::{Color, Colorize};
-use rand::prelude::*;
 
 const STACK_MAX: usize = 512;
 
@@ -36,12 +39,14 @@ pub(crate) struct CallFrame {
     function: Function,
     ip: usize,
     cf_stack_top: usize,
-    color: Color
+    color: Color,
 }
 
 fn random_color(raw: Vec<Color>) -> Color {
-    let (_i, &color) = raw.iter().enumerate().choose(&mut thread_rng()).unwrap();
-    color
+    let r: u8 = rand::thread_rng().gen_range(1..=255);
+    let g: u8 = rand::thread_rng().gen_range(1..=255);
+    let b: u8 = rand::thread_rng().gen_range(1..=255);
+    Color::TrueColor { r, g, b }
 }
 
 impl CallFrame {
@@ -181,38 +186,16 @@ impl VM {
             .unwrap()
             .clone();
         loop {
-            current_frame.print_name();
             let instruction = READ_BYTE!(self, current_frame);
             let opcode = num::FromPrimitive::from_u8(instruction);
-            if debug::is_debug() && !matches!(opcode, None) {
-                if debug::print_stack() {
-                    println!("##### Stack[Start] ###### \n");
-                    for i in 0..self.stack.len() {
-                        print!("[{:?}] ", self.stack[i]);
-                    }
-                    println!("\n\n ##### Stack[End] ######");
-                }
-
-                current_frame
-                    .function
-                    .chunk
-                    .handle_instruction(&instruction, (current_frame.ip - 1) as usize);
-            }
+            self.print_debug_info(&mut current_frame, &instruction, &opcode);
 
             match opcode {
                 Some(OpCode::Return) => {
-                    let result = self.pop();
-                    self.frame_count -= 1;
-
-                    if self.frame_count == 0 {
-                        // @todo check if we need this pop.
-                        //self.pop();
+                    let is_last_frame = self.return_op(&mut current_frame);
+                    if is_last_frame {
                         return InterpretResult::InterpretOk;
                     }
-                    // + 1 for the first stack entry
-                    self.stack_top = current_frame.cf_stack_top;
-                    println!("Pushing return value to stack: {:?}", result);
-                    self.push(result);
                     current_frame = self.call_frames[self.frame_count - 1]
                         .as_ref()
                         .unwrap()
@@ -341,52 +324,15 @@ impl VM {
                     let constant = READ_CONSTANT!(self, current_frame).unwrap().clone();
                     println!("GetGlobalVariable: Read constant value: {:?}", constant);
                     let variable_name = READ_FAT_PTR!(self, constant);
-                    let size = variable_name.size;
-                    let ptr = variable_name.ptr;
-                    let value = self.get_variable_value(variable_name);
-
-                    match value {
-                        Some(val) => match value {
-                            Some(Value::Boolean(v)) => {
-                                println!("Boolean value pushing to stack {:?}", v);
-                                self.push(val.clone());
-                            }
-                            Some(Value::Number(v)) => {
-                                println!("Number value pushing to stack {:?}", v);
-                                self.push(val.clone());
-                            }
-                            Some(Value::Obj(obj)) => {
-                                let ptr = Into::<FatPointer>::into(obj.clone());
-                                let c_value = memory::read_string(ptr.ptr, ptr.size);
-                                println!("Object value pushing to stack {:?}", c_value);
-                                self.push(val.clone());
-                            }
-                            _ => {
-                                println!("Unknown value pushing to stack");
-                                self.push(val.clone());
-                            }
-                        },
-                        None => {
-                            let key = memory::read_string(ptr, size);
-                            let message = format!("Unable to find value for key {:?}", key);
-                            self.runtime_error(message.as_str());
-                            return InterpretResult::InterpretRuntimeError;
-                        }
+                    if let Some(ret) = self.push_obj_value_to_stack(variable_name) {
+                        return ret;
                     }
                 }
                 Some(OpCode::SetGlobalVariable) => {
                     let constant = READ_CONSTANT!(self, current_frame).unwrap().clone();
                     let variable_name = READ_FAT_PTR!(self, constant);
-                    let size = variable_name.size;
-                    let ptr = variable_name.ptr;
-                    let value = self.peek(0);
-
-                    if !self.globals.insert(variable_name.clone(), value) {
-                        self.globals.delete(variable_name.clone());
-                        let key = memory::read_string(ptr, size);
-                        let message = format!("Unable to find value for key {:?}", key);
-                        self.runtime_error(message.as_str());
-                        return InterpretResult::InterpretRuntimeError;
+                    if let Some(ret) = self.set_global_variable(variable_name) {
+                        return ret;
                     }
                 }
                 Some(OpCode::Print) => {
@@ -399,6 +345,111 @@ impl VM {
                 }
             }
         }
+    }
+
+    fn set_global_variable(&mut self, variable_name: FatPointer) -> Option<InterpretResult> {
+        let size = variable_name.size;
+        let ptr = variable_name.ptr;
+        let value = self.peek(0);
+
+        if !self.globals.insert(variable_name.clone(), value) {
+            self.globals.delete(variable_name.clone());
+            let key = memory::read_string(ptr, size);
+            let message = format!("Unable to find value for key {:?}", key);
+            self.runtime_error(message.as_str());
+            return Some(InterpretResult::InterpretRuntimeError);
+        }
+
+        None
+    }
+
+    fn push_obj_value_to_stack(&mut self, variable_name: FatPointer) -> Option<InterpretResult> {
+        let size = variable_name.size;
+        let ptr = variable_name.ptr;
+        let value = self.get_variable_value(variable_name);
+
+        match value {
+            Some(val) => match value {
+                Some(Value::Boolean(v)) => {
+                    println!("Boolean value pushing to stack {:?}", v);
+                    self.push(val.clone());
+                }
+                Some(Value::Number(v)) => {
+                    println!("Number value pushing to stack {:?}", v);
+                    self.push(val.clone());
+                }
+                Some(Value::Obj(obj)) => match obj {
+                    Obj::Str(ptr) => {
+                        let c_value = memory::read_string(ptr.ptr, ptr.size);
+                        println!("String Object value pushing to stack {:?}", c_value);
+                        self.push(val.clone());
+                    }
+                    Obj::Fun(function) => {
+                        let function_name = function.name.as_ref().unwrap();
+                        let name = memory::read_string(function_name.ptr, function_name.size);
+                        println!(
+                            "Function Object value pushing to stack {:?} with name: {:?}",
+                            function, name
+                        );
+                        self.push(val.clone());
+                    }
+                    _ => {
+                        println!("Unknown object pushing to stack");
+                        self.push(val.clone());
+                    }
+                },
+                _ => {
+                    println!("Unknown value pushing to stack");
+                    self.push(val.clone());
+                }
+            },
+            None => {
+                let key = memory::read_string(ptr, size);
+                let message = format!("Unable to find value for key {:?}", key);
+                self.runtime_error(message.as_str());
+                return Some(InterpretResult::InterpretRuntimeError);
+            }
+        }
+        None
+    }
+
+    fn print_debug_info(
+        &mut self,
+        mut current_frame: &mut CallFrame,
+        instruction: &u8,
+        opcode: &Option<OpCode>,
+    ) {
+        current_frame.print_name();
+        if debug::is_debug() && !matches!(opcode, None) {
+            if debug::print_stack() {
+                println!("##### Stack[Start] ###### \n");
+                for i in 0..self.stack.len() {
+                    print!("[{:?}] ", self.stack[i]);
+                }
+                println!("\n\n ##### Stack[End] ######");
+            }
+
+            current_frame
+                .function
+                .chunk
+                .handle_instruction(&instruction, (current_frame.ip - 1) as usize);
+        }
+    }
+
+    fn return_op(&mut self, current_frame: &mut CallFrame) -> bool {
+        let result = self.pop();
+        self.frame_count -= 1;
+
+        if self.frame_count == 0 {
+            // @todo check if we need this pop.
+            //self.pop();
+            return true;
+        }
+        // + 1 for the first stack entry
+        self.stack_top = current_frame.cf_stack_top;
+        println!("Pushing return value to stack: {:?}", result);
+        self.push(result);
+        false
     }
 
     fn execute_function(&mut self, callee: Value, arg_count: u8) -> bool {
@@ -442,7 +493,7 @@ impl VM {
             function,
             ip: 0, //@todo check if this value should be 0 or not
             cf_stack_top,
-            color: random_color(COLORS.to_vec())
+            color: random_color(COLORS.to_vec()),
         };
 
         self.call_frames[self.frame_count] = Some(call_frame);

@@ -1,5 +1,3 @@
-
-
 //fnv hash impl basic
 pub(crate) fn hash(value: &str) -> u32 {
     let mut hash = 2166136261;
