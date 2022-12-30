@@ -112,7 +112,7 @@ impl Into<bool> for Value {
     fn into(self) -> bool {
         match self {
             Value::Boolean(value) => value,
-            //@todo @pawanc check if it should be false this can be wrong in most cases
+            //@todo @pending check if it should be false this can be wrong in most cases
             // may be we should throw error
             _ => false,
         }
@@ -123,7 +123,7 @@ impl Into<f64> for Value {
     fn into(self) -> f64 {
         match self {
             Value::Number(value) => value,
-            //@todo @pawanc check if it should be false this can be wrong in most cases
+            //@todo @pending check if it should be false this can be wrong in most cases
             // may be we should throw error
             _ => 0.0,
         }
@@ -134,7 +134,7 @@ impl Into<Obj> for Value {
     fn into(self) -> Obj {
         match self {
             Value::Obj(value) => value,
-            //@todo @pawanc check if it should be false this can be wrong in most cases
+            //@todo @pending check if it should be false this can be wrong in most cases
             // may be we should throw error
             _ => panic!("Unexpected error"),
         }
@@ -146,7 +146,7 @@ impl Into<FatPointer> for Value {
     fn into(self) -> FatPointer {
         match self {
             Value::Obj(obj) => Into::<FatPointer>::into(obj),
-            //@todo @pawanc check if it should be false this can be wrong in most cases
+            //@todo @pending check if it should be false this can be wrong in most cases
             // may be we should throw error
             _ => panic!("Unexpected error"),
         }
@@ -207,7 +207,7 @@ impl Obj {
     pub fn get_func_chunk(&mut self) -> &mut Chunk {
         match self {
             Obj::Fun(function) => &mut function.chunk,
-            //@todo @pawanc check if it should be false this can be wrong in most cases
+            //@todo @pending check if it should be false this can be wrong in most cases
             // may be we should throw error
             _ => panic!("Not able to convert to function from object"),
         }
@@ -250,7 +250,7 @@ impl Into<FatPointer> for Obj {
     fn into(self) -> FatPointer {
         match self {
             Obj::Str(ptr) => ptr,
-            //@todo @pawanc check if it should be false this can be wrong in most cases
+            //@todo @pending check if it should be false this can be wrong in most cases
             // may be we should throw error
             _ => FatPointer {
                 ptr: "".to_string().as_mut_ptr(),
@@ -265,7 +265,7 @@ impl Into<Function> for Obj {
     fn into(self) -> Function {
         match self {
             Obj::Fun(function) => function,
-            //@todo @pawanc check if it should be false this can be wrong in most cases
+            //@todo @pending check if it should be false this can be wrong in most cases
             // may be we should throw error
             _ => panic!("Not able to convert to function from object"),
         }
