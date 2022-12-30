@@ -398,7 +398,7 @@ impl VM {
 
     fn print_debug_info(
         &mut self,
-        mut current_frame: &mut CallFrame,
+        current_frame: &mut CallFrame,
         instruction: &u8,
         opcode: &Option<OpCode>,
     ) {
@@ -514,24 +514,21 @@ impl VM {
     }
 
     fn concat(&mut self) -> Value {
-        let second = self.pop();
-        let first = self.pop();
-        let obj1 = Into::<Obj>::into(first);
-        let obj2 = Into::<Obj>::into(second);
-        let ptr_1 = Into::<FatPointer>::into(obj1);
-        let ptr_2 = Into::<FatPointer>::into(obj2);
-
+        let second = Into::<FatPointer>::into(self.pop());
+        let first = Into::<FatPointer>::into(self.pop());
+            
         let ptr = memory::allocate::<String>();
-        memory::copy(ptr_1.ptr, ptr, ptr_1.size, 0);
-        memory::copy(ptr_2.ptr, ptr, ptr_2.size, ptr_1.size);
+        memory::copy(first.ptr, ptr, first.size, 0);
+        memory::copy(second.ptr, ptr, second.size, first.size);
 
-        let hash_value = hash(memory::read_string(ptr, ptr_1.size + ptr_2.size).as_str());
+        let hash_value = hash(memory::read_string(ptr, first.size + second.size).as_str());
         Value::from(Obj::from(FatPointer {
             ptr,
-            size: (ptr_1.size + ptr_2.size),
+            size: (first.size + second.size),
             hash: hash_value,
         }))
     }
+
 
     pub(crate) fn interpret<'m>(&mut self, source: String) -> InterpretResult {
         let chars: Vec<char> = source.chars().collect();

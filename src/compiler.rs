@@ -445,7 +445,7 @@ impl<'c> Compiler<'c> {
             self.end_scope();
         } else {
             self.expression_statement();
-        }
+        }        
     }
 
     fn return_stmt(&mut self) {

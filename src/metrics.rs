@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use colored::{Color, Colorize};
+use colored::{Colorize};
 use crate::common::{random_color};
 static mut EVENTS: Option<HashMap<String, Duration>> = None;
 

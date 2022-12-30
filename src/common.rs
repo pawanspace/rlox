@@ -141,6 +141,19 @@ impl Into<Obj> for Value {
     }
 }
 
+
+impl Into<FatPointer> for Value {
+    fn into(self) -> FatPointer {
+        match self {
+            Value::Obj(obj) => Into::<FatPointer>::into(obj),
+            //@todo @pawanc check if it should be false this can be wrong in most cases
+            // may be we should throw error
+            _ => panic!("Unexpected error"),
+        }
+    }
+}
+
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct FatPointer {
     pub(crate) ptr: *mut u8,
