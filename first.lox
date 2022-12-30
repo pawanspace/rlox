@@ -28,4 +28,4 @@ fun working() {
     print "working well I guess!";
 }
 
-print working;
+working();

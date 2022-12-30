@@ -139,7 +139,7 @@ impl VM {
     }
 
     fn run(&mut self) -> InterpretResult {
-        let mut current_frame =  self.call_frames[self.frame_count - 1].clone();
+        let mut current_frame = self.call_frames[self.frame_count - 1].clone();
         loop {
             let instruction = READ_BYTE!(self, current_frame);
             let opcode = num::FromPrimitive::from_u8(instruction);
@@ -162,7 +162,7 @@ impl VM {
                 Some(OpCode::Return) => {
                     return InterpretResult::InterpretOk;
                 }
-                Some(OpCode::Negate) => {                    
+                Some(OpCode::Negate) => {
                     let value = self.peek(0);
                     if !value.is_number() {
                         self.runtime_error("Expected number for Negate opcode!");
@@ -213,8 +213,8 @@ impl VM {
                     self.push(Value::from(self.is_equal(left, right)));
                 }
                 Some(OpCode::Constant) => {
-                    let constant = READ_CONSTANT!(self, current_frame);                    
-                    self.push((*constant.unwrap()).clone());                    
+                    let constant = READ_CONSTANT!(self, current_frame);
+                    self.push((*constant.unwrap()).clone());
                 }
                 Some(OpCode::False) => {
                     self.push(Value::from(false));
@@ -245,30 +245,35 @@ impl VM {
                 }
                 Some(OpCode::Call) => {
                     let arg_count = READ_BYTE!(self, current_frame);
-
+                    if !self.execute_function(self.peek(arg_count as usize), arg_count) {
+                        return InterpretResult::InterpretRuntimeError;
+                    }
+                    current_frame = self.call_frames[self.frame_count - 1].clone();
                 }
-                Some(OpCode::JumpIfFalse) => {                    
+                Some(OpCode::JumpIfFalse) => {
                     if self.is_falsey(self.peek(0)) {
                         //current_frame.ip += offset as usize;
                         current_frame = self.update_offset(current_frame, true);
                     } else {
                         current_frame.ip = current_frame.ip + 2;
                     }
-                },
-                Some(OpCode::Jump) => {                    
+                }
+                Some(OpCode::Jump) => {
                     current_frame = self.update_offset(current_frame, true);
-                },
+                }
                 Some(OpCode::Loop) => {
                     current_frame = self.update_offset(current_frame, false);
-                },
+                }
                 Some(OpCode::GetLocalVariable) => {
                     let b = READ_BYTE!(self, current_frame);
-                    let val = self.stack[current_frame.cf_stack_top + b as usize].clone().unwrap();
+                    let val = self.stack[current_frame.cf_stack_top + b as usize]
+                        .clone()
+                        .unwrap();
                     self.push(val.clone());
                 }
                 Some(OpCode::SetLocalVariable) => {
                     let b = READ_BYTE!(self, current_frame);
-                    self.stack[current_frame.cf_stack_top + b as usize] = Some(self.peek(0));                    
+                    self.stack[current_frame.cf_stack_top + b as usize] = Some(self.peek(0));
                 }
                 Some(OpCode::GetGlobalVariable) => {
                     let constant = READ_CONSTANT!(self, current_frame).unwrap().clone();
@@ -330,49 +335,68 @@ impl VM {
                     return InterpretResult::InterpretOk;
                 }
             }
-        }        
+        }
     }
-
 
     fn execute_function(&mut self, callee: Value, arg_count: u8) -> bool {
         if callee.is_obj() {
             let obj = Into::<Obj>::into(callee);
             match obj {
                 Obj::Fun(function) => {
-                    let call_frame = CallFrame {
-                        function,
-                        ip: 0, //@todo check if this value should be 0 or not
-                        /**
-                         * The funny little - 1 is to account for stack slot zero which the compiler 
-                         * set aside for when we add methods later. 
-                         * The parameters start at slot one so we make the window start 
-                         * one slot earlier to align them with the arguments.
-                         * -1 is for name of the function
-                         */
-                        cf_stack_top: self.stack_top - ((arg_count - 1) as usize),
-                    };                    
-                },
-                _ => ()
+                    if function.arity != arg_count {
+                        self.runtime_error(
+                            format!(
+                                "Expected: {:?} arguments but received: {:?}",
+                                function.arity, arg_count
+                            )
+                            .as_str(),
+                        );
+                    }
+                    self.create_call_frame(function, arg_count);
+                    return true;
+                }
+                _ => (),
             }
         }
         self.runtime_error("Can only execute function");
         false
     }
 
+    fn create_call_frame(&mut self, function: Function, arg_count: u8) {
+        let mut cf_stack_top = 0;
+        if self.stack_top > 0 {
+            /*
+             * The funny little - 1 is to account for stack slot zero which the compiler
+             * set aside for when we add methods later.
+             * The parameters start at slot one so we make the window start
+             * one slot earlier to align them with the arguments.
+             * -1 is for name of the function
+             */
+            cf_stack_top = self.stack_top - (arg_count as usize) - (1 as usize);
+        }
+        let call_frame = CallFrame {
+            function,
+            ip: 0, //@todo check if this value should be 0 or not
+            cf_stack_top,
+        };
+        
+        self.call_frames.push(call_frame);        
+        self.frame_count += 1;
+    }
 
-    fn update_offset(&self, mut current_frame: CallFrame, add: bool) -> CallFrame{ 
+    fn update_offset(&self, mut current_frame: CallFrame, add: bool) -> CallFrame {
         let offset_bytes: [u8; 2] = [
             current_frame.function.chunk.code[(current_frame.ip + 1) as usize],
             current_frame.function.chunk.code[(current_frame.ip) as usize],
         ];
         current_frame.ip = current_frame.ip + 2;
         // adding 2 because we read offset bytes
-        let offset = u16::from_ne_bytes(offset_bytes);        
+        let offset = u16::from_ne_bytes(offset_bytes);
         if add {
             current_frame.ip += offset as usize;
         } else {
             current_frame.ip -= offset as usize;
-        }                
+        }
 
         current_frame
     }
@@ -416,7 +440,7 @@ impl VM {
         self.run()
     }
 
-    pub(crate) fn interpret<'m>(&mut self, source: String) -> InterpretResult {        
+    pub(crate) fn interpret<'m>(&mut self, source: String) -> InterpretResult {
         let chars: Vec<char> = source.chars().collect();
         let scanner = Scanner::init(0, 0, chars);
 
@@ -432,12 +456,7 @@ impl VM {
         self.ip = 0;
         self.push(Value::from(function_obj.clone()));
         let function = Into::<Function>::into(function_obj);
-        self.call_frames.push(CallFrame {
-            function,
-            ip: 0, //@todo check if this value should be 0 or not
-            cf_stack_top: 0,
-        });
-        self.frame_count += 1;
+        self.create_call_frame(function, 0);
         metrics::record("VM run time".to_string(), || self.run())
     }
 }

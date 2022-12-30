@@ -90,6 +90,7 @@ impl<'a> Chunk {
             | Some(OpCode::GetLocalVariable)
             | Some(OpCode::SetLocalVariable)
             | Some(OpCode::Pop)
+            | Some(OpCode::Call)
             | Some(OpCode::Divide) => {
                 debug::debug(format!("opcode: {:?}", opcode.unwrap()), true);
             }
