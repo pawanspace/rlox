@@ -1,5 +1,7 @@
 use num_derive::FromPrimitive;
 use std::fmt::Debug;
+use colored::Color;
+use rand::prelude::*;
 
 use crate::{chunk::Chunk, hasher, memory};
 
@@ -255,4 +257,12 @@ impl Into<Function> for Obj {
             _ => panic!("Not able to convert to function from object"),
         }
     }
+}
+
+
+pub(crate) fn random_color() -> Color {
+    let r: u8 = rand::thread_rng().gen_range(1..=255);
+    let g: u8 = rand::thread_rng().gen_range(1..=255);
+    let b: u8 = rand::thread_rng().gen_range(1..=255);
+    Color::TrueColor { r, g, b }
 }

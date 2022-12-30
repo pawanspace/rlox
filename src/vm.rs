@@ -1,10 +1,7 @@
 extern crate num;
 
-use colored::Color::TrueColor;
 use colored::{Color, Colorize};
-use rand::prelude::*;
-
-use crate::common::{FatPointer, Function, Obj, OpCode, Value};
+use crate::common::{FatPointer, Function, Obj, OpCode, Value, random_color};
 use crate::debug;
 use crate::hash_map::Table;
 use crate::hasher::hash;
@@ -25,15 +22,6 @@ pub(crate) struct VM {
     frame_count: usize,
 }
 
-static COLORS: &'static [Color] = &[
-    Color::Red,
-    Color::Blue,
-    Color::Green,
-    Color::Yellow,
-    Color::Magenta,
-    Color::Cyan,
-];
-
 #[derive(Debug, Clone)]
 pub(crate) struct CallFrame {
     function: Function,
@@ -42,12 +30,7 @@ pub(crate) struct CallFrame {
     color: Color,
 }
 
-fn random_color(raw: Vec<Color>) -> Color {
-    let r: u8 = rand::thread_rng().gen_range(1..=255);
-    let g: u8 = rand::thread_rng().gen_range(1..=255);
-    let b: u8 = rand::thread_rng().gen_range(1..=255);
-    Color::TrueColor { r, g, b }
-}
+
 
 impl CallFrame {
     fn print_name(&self) {
@@ -493,7 +476,7 @@ impl VM {
             function,
             ip: 0, //@todo check if this value should be 0 or not
             cf_stack_top,
-            color: random_color(COLORS.to_vec()),
+            color: random_color(),
         };
 
         self.call_frames[self.frame_count] = Some(call_frame);
