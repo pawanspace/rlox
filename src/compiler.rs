@@ -1,5 +1,5 @@
 use crate::chunk::Chunk;
-use crate::common::{FatPointer, Obj, OpCode, Value, Function, FunctionType};
+use crate::common::{FatPointer, Function, FunctionType, Obj, OpCode, Value};
 use crate::hash_map::Table;
 use crate::hasher;
 use crate::memory;
@@ -154,20 +154,17 @@ pub(crate) enum Local {
 
 pub(crate) struct Compiler<'c> {
     scanner: Scanner,
-    parser: Parser,    
+    parser: Parser,
     source: String,
     table: &'c mut Table<Value>,
     function: Obj,
     locals: Vec<Local>,
     local_count: usize,
-    scope_depth: usize,    
+    scope_depth: usize,
 }
 
 impl<'c> Compiler<'c> {
-    pub(crate) fn init(
-        scanner: Scanner,        
-        table: &'c mut Table<Value>,
-    ) -> Compiler {
+    pub(crate) fn init(scanner: Scanner, table: &'c mut Table<Value>) -> Compiler {
         let parser = Parser {
             current: None,
             previous: None,
@@ -177,22 +174,22 @@ impl<'c> Compiler<'c> {
 
         let mut locals = vec![];
         locals.resize(u8::MAX as usize, Local::Empty);
-        
+
         let compiler = Compiler {
             scanner,
-            parser,            
+            parser,
             source: "".to_string(),
             table,
             locals,
             local_count: 1, // starting with 1 take first spot for top level function
             scope_depth: 0,
-            function: Obj::Fun(Function::new_function(FunctionType::Script))            
+            function: Obj::Fun(Function::new_function(FunctionType::Script)),
         };
-        
+
         compiler
     }
 
-    pub(crate) fn compile(&mut self, source: String) -> (bool, Obj) {        
+    pub(crate) fn compile(&mut self, source: String) -> (bool, Obj) {
         self.source = source;
         let chars: Vec<char> = self.source.chars().collect();
         self.scanner.refresh(0, self.source.len(), chars);
@@ -201,10 +198,7 @@ impl<'c> Compiler<'c> {
             self.declaration();
         }
         self.end_compiler();
-        (
-            self.parser.had_error,
-            self.function.clone()
-        )
+        (self.parser.had_error, self.function.clone())
     }
 
     fn advance(&mut self) {
@@ -239,21 +233,35 @@ impl<'c> Compiler<'c> {
         let prev_token = self.parser.previous.unwrap();
         self.function();
         self.emit_opcode(OpCode::DefineGlobalVariable);
-        self.current_chunk()
-            .write_index(index, prev_token.line);
+        self.current_chunk().write_index(index, prev_token.line);
     }
 
-    fn function(&mut self) {     
-        let mut compiler = Compiler::init(self.scanner.clone(), self.table);            
-        compiler.parser = self.parser.clone();
-        compiler.source = self.source.clone();
-        let mut function = Function::new_function(FunctionType::Function);        
-        let token = self.parser.previous.unwrap();        
-        let str_value = &mut self.source[token.start..token.start + token.length];
+    fn clone_compiler(
+        scanner: Scanner,
+        table: &'c mut Table<Value>,
+        source: String,
+        parser: Parser,
+    ) -> Compiler {
+        let mut compiler = Compiler::init(scanner, table);
+        compiler.parser = parser;
+        compiler.source = source;
+        compiler
+    }
+
+    fn function(&mut self) {
+        let mut compiler = Compiler::clone_compiler(
+            self.scanner.clone(),
+            self.table,
+            self.source.clone(),
+            self.parser.clone(),
+        );
+        let mut function = Function::new_function(FunctionType::Function);
+        let token = self.parser.previous.unwrap();
+        let str_value = & self.source[token.start..token.start + token.length];
         let hash_value = hasher::hash(str_value);
         let exiting_value = compiler.table.find_entry_with_value(str_value, hash_value);
         function.name = exiting_value.cloned();
-        let function_obj = Obj::Fun(Function::new_function(FunctionType::Function));        
+        let function_obj = Obj::Fun(Function::new_function(FunctionType::Function));
         compiler.function = function_obj;
         compiler.begin_scope();
         compiler.consume(TokenType::LeftParen, "Expect '(' after function name");
@@ -264,25 +272,27 @@ impl<'c> Compiler<'c> {
                 match compiler.match_token(TokenType::Comma) {
                     true => {
                         compiler.parse_and_define_parameter(&mut function);
-                    }, 
-                    false => break
-                } 
-            }            
+                    }
+                    false => break,
+                }
+            }
         }
         compiler.consume(
             TokenType::RightParen,
-            "Expect ')' at the end of function params"
+            "Expect ')' at the end of function params",
         );
         compiler.consume(
             TokenType::LeftBrace,
-            "Expect '{' at the beginning  of function body"
+            "Expect '{' at the beginning  of function body",
         );
         compiler.block();
-        compiler.end_scope();   
+        compiler.end_scope();
         compiler.end_compiler();
+        
+        // reset old compiler state
         self.parser = compiler.parser;
-        self.scanner = compiler.scanner;        
-        let new_function = compiler.function.clone();           
+        self.scanner = compiler.scanner;
+        let new_function = compiler.function.clone();
         self.emit_constant(Value::from(new_function));
     }
 
@@ -337,11 +347,11 @@ impl<'c> Compiler<'c> {
         }
     }
 
-    fn resolve_local(&mut self, token: Token) -> i32 {  
+    fn resolve_local(&mut self, token: Token) -> i32 {
         if self.local_count <= 0 {
             return -1;
-        }      
-        
+        }
+
         for (idx, existing) in self.locals.iter().enumerate().rev() {
             match existing {
                 Local::Filled(existing_token, depth) => {
@@ -379,7 +389,7 @@ impl<'c> Compiler<'c> {
         let prev_token = self.previous_token();
         if can_assign && self.match_token(TokenType::Equal) {
             self.expression();
-            self.emit_opcode(set_op);            
+            self.emit_opcode(set_op);
             self.current_chunk()
                 // @type_conversion this conversion here to usize will result in usize::MAX
                 // when existing_index is -1
@@ -399,8 +409,7 @@ impl<'c> Compiler<'c> {
         }
         let prev_token = self.previous_token();
         self.emit_opcode(OpCode::DefineGlobalVariable);
-        self.current_chunk()
-            .write_index(index, prev_token.line);
+        self.current_chunk().write_index(index, prev_token.line);
     }
 
     fn identifier(&mut self) -> usize {
@@ -450,7 +459,6 @@ impl<'c> Compiler<'c> {
             self.emit_opcode(OpCode::Pop) // pop truthy
         }
 
-   
         // optional increment block
         if !self.match_token(TokenType::RightParen) {
             let body_jump = self.emit_jump(OpCode::Jump);
@@ -570,18 +578,14 @@ impl<'c> Compiler<'c> {
         self.scope_depth += 1;
     }
 
-    fn end_scope(&mut self) {      
+    fn end_scope(&mut self) {
         self.scope_depth -= 1;
         let scoped_locals = self
             .locals
             .iter()
-            .filter(|local| {
-                match local {
-                    Local::Filled(_, depth ) => {
-                        depth.gt(&self.scope_depth)
-                    },
-                    _ => false
-                }
+            .filter(|local| match local {
+                Local::Filled(_, depth) => depth.gt(&self.scope_depth),
+                _ => false,
             })
             .count();
         if self.local_count == 0 {
@@ -686,8 +690,7 @@ impl<'c> Compiler<'c> {
 
     fn emit_byte(&mut self, byte: u8) {
         let prev_token = self.previous_token();
-        self.current_chunk()
-            .write_chunk(byte, prev_token.line);
+        self.current_chunk().write_chunk(byte, prev_token.line);
     }
 
     fn emit_bytes(&mut self, byte_1: u8, byte_2: u8) {
@@ -719,8 +722,7 @@ impl<'c> Compiler<'c> {
 
     fn emit_constant(&mut self, value: Value) -> usize {
         let prev_token = self.previous_token();
-        self.current_chunk()
-            .write_constant(value, prev_token.line)
+        self.current_chunk().write_constant(value, prev_token.line)
     }
 
     fn str_to_float(&mut self, token: Token) -> f64 {
@@ -762,16 +764,15 @@ impl<'c> Compiler<'c> {
                         if arg_count == 255 {
                             self.error("Can't have more than 255 arguments");
                         }
-                    }, 
-                    false => break
-                } 
-            }            
+                    }
+                    false => break,
+                }
+            }
         }
-        self.consume(TokenType::RightParen, "Expected ')' in function call.");        
+        self.consume(TokenType::RightParen, "Expected ')' in function call.");
         self.emit_opcode(OpCode::Call);
         self.emit_byte(arg_count);
     }
-
 
     fn string(&mut self, _can_assign: bool, emit_constant: bool) -> usize {
         let token = self.parser.previous.unwrap();
@@ -905,11 +906,11 @@ impl<'c> Compiler<'c> {
         }
     }
 
-    fn current_chunk(&mut self) -> &mut Chunk {                
+    fn current_chunk(&mut self) -> &mut Chunk {
         self.function.get_func_chunk()
     }
 
-    fn previous_token(&self) -> Token {                
+    fn previous_token(&self) -> Token {
         self.parser.previous.unwrap()
     }
 }
