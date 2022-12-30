@@ -29,3 +29,20 @@ fun add(a, b) {
 }
 
 add(10, 20);
+
+fun add_and_return(a, b) {
+    return a + b;
+}
+
+var sum = add_and_return(23, 56);
+print sum;
+
+
+fun multiply_and_return(a, b, c) {
+    return a * b * c;
+}
+
+print multiply_and_return(2, 2, 2);
+
+
+

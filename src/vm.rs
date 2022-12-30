@@ -1,4 +1,3 @@
-use crate::chunk::Chunk;
 use crate::common::{FatPointer, Function, Obj, OpCode, Value};
 use crate::debug;
 use crate::hash_map::Table;
@@ -7,25 +6,64 @@ use crate::metrics;
 use crate::scanner::Scanner;
 use crate::{compiler, memory};
 extern crate num;
+use colored::{Color, Colorize};
+use rand::prelude::*;
 
 const STACK_MAX: usize = 512;
 
 #[derive(Debug)]
 pub(crate) struct VM {
-    chunk: Option<Box<Chunk>>,
     ip: i32,
     stack: Vec<Option<Value>>,
     stack_top: usize,
     table: Table<Value>,
     globals: Table<Value>,
-    call_frames: Vec<CallFrame>,
+    call_frames: Vec<Option<CallFrame>>,
     frame_count: usize,
 }
+
+static COLORS: &'static [Color] = &[
+    Color::Red,
+    Color::Blue,
+    Color::Green,
+    Color::Yellow,
+    Color::Magenta,
+    Color::Cyan,
+];
+
 #[derive(Debug, Clone)]
 pub(crate) struct CallFrame {
     function: Function,
     ip: usize,
     cf_stack_top: usize,
+    color: Color
+}
+
+fn random_color(raw: Vec<Color>) -> Color {
+    let (i, &color) = raw.iter().enumerate().choose(&mut thread_rng()).unwrap();
+    color
+}
+
+impl CallFrame {
+    fn print_name(&self) {
+        match self.function.name.clone() {
+            Some(ptr) => {
+                let cf_name = memory::read_string(ptr.ptr, ptr.size);
+                println!(
+                    "{}",
+                    format!("****** CallFrame: {:?} ******", cf_name)
+                        .color(self.color)
+                        .bold()
+                );
+            }
+            None => println!(
+                "{}",
+                format!("****** CallFrame: {:?} ******", "Main")
+                    .color(self.color)
+                    .bold()
+            ),
+        }
+    }
 }
 
 pub enum InterpretResult {
@@ -46,12 +84,9 @@ macro_rules! READ_BYTE {
 
 macro_rules! READ_CONSTANT {
     ($self:ident, $frame:ident) => {{
-        $frame
-            .function
-            .chunk
-            .constants
-            .values
-            .get(READ_BYTE!($self, $frame) as usize)
+        let index = READ_BYTE!($self, $frame) as usize;
+        println!("Reading constant from index: {:?}", index);
+        $frame.function.chunk.constants.values.get(index)
     }};
 }
 
@@ -101,14 +136,16 @@ impl VM {
             local_stack.push(None);
         }
 
+        let mut call_frames: Vec<Option<CallFrame>> = Vec::new();
+        call_frames.resize(512, None);
+
         VM {
-            chunk: None,
             ip: -1,
             stack: local_stack,
             stack_top: 0,
             table: Table::init(10),
             globals: Table::init(10),
-            call_frames: Vec::new(),
+            call_frames,
             frame_count: 0,
         }
     }
@@ -139,8 +176,12 @@ impl VM {
     }
 
     fn run(&mut self) -> InterpretResult {
-        let mut current_frame = self.call_frames[self.frame_count - 1].clone();
+        let mut current_frame = self.call_frames[self.frame_count - 1]
+            .as_ref()
+            .unwrap()
+            .clone();
         loop {
+            current_frame.print_name();
             let instruction = READ_BYTE!(self, current_frame);
             let opcode = num::FromPrimitive::from_u8(instruction);
             if debug::is_debug() && !matches!(opcode, None) {
@@ -160,7 +201,22 @@ impl VM {
 
             match opcode {
                 Some(OpCode::Return) => {
-                    return InterpretResult::InterpretOk;
+                    let result = self.pop();
+                    self.frame_count -= 1;
+
+                    if self.frame_count == 0 {
+                        // @todo check if we need this pop.
+                        //self.pop();
+                        return InterpretResult::InterpretOk;
+                    }
+                    // + 1 for the first stack entry
+                    self.stack_top = current_frame.cf_stack_top;
+                    println!("Pushing return value to stack: {:?}", result);
+                    self.push(result);
+                    current_frame = self.call_frames[self.frame_count - 1]
+                        .as_ref()
+                        .unwrap()
+                        .clone();
                 }
                 Some(OpCode::Negate) => {
                     let value = self.peek(0);
@@ -235,6 +291,7 @@ impl VM {
                 }
                 Some(OpCode::DefineGlobalVariable) => {
                     let constant = READ_CONSTANT!(self, current_frame).unwrap().clone();
+                    println!("DefineGlobalVariable: Read constant value: {:?}", constant);
                     let variable_name = READ_FAT_PTR!(self, constant);
                     let value = self.peek(0);
                     self.globals.insert(variable_name, value);
@@ -245,10 +302,15 @@ impl VM {
                 }
                 Some(OpCode::Call) => {
                     let arg_count = READ_BYTE!(self, current_frame);
+                    let old_frame = current_frame.clone();
                     if !self.execute_function(self.peek(arg_count as usize), arg_count) {
                         return InterpretResult::InterpretRuntimeError;
                     }
-                    current_frame = self.call_frames[self.frame_count - 1].clone();
+                    current_frame = self.call_frames[self.frame_count - 1]
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    self.call_frames[self.frame_count - 2] = Some(old_frame);
                 }
                 Some(OpCode::JumpIfFalse) => {
                     if self.is_falsey(self.peek(0)) {
@@ -277,6 +339,7 @@ impl VM {
                 }
                 Some(OpCode::GetGlobalVariable) => {
                     let constant = READ_CONSTANT!(self, current_frame).unwrap().clone();
+                    println!("GetGlobalVariable: Read constant value: {:?}", constant);
                     let variable_name = READ_FAT_PTR!(self, constant);
                     let size = variable_name.size;
                     let ptr = variable_name.ptr;
@@ -331,7 +394,7 @@ impl VM {
                 }
                 _ => {
                     println!("Stopping vm: {:?}", opcode);
-                    self.call_frames[self.frame_count - 1] = current_frame;
+                    self.call_frames[self.frame_count - 1] = Some(current_frame);
                     return InterpretResult::InterpretOk;
                 }
             }
@@ -373,14 +436,16 @@ impl VM {
              * -1 is for name of the function
              */
             cf_stack_top = self.stack_top - (arg_count as usize) - (1 as usize);
-        }
+        };
+
         let call_frame = CallFrame {
             function,
             ip: 0, //@todo check if this value should be 0 or not
             cf_stack_top,
+            color: random_color(COLORS.to_vec())
         };
-        
-        self.call_frames.push(call_frame);        
+
+        self.call_frames[self.frame_count] = Some(call_frame);
         self.frame_count += 1;
     }
 
@@ -434,12 +499,6 @@ impl VM {
         }))
     }
 
-    pub(crate) fn interpret_old(&mut self, chunk: Chunk) -> InterpretResult {
-        self.chunk = Some(Box::new(chunk));
-        self.ip = 0;
-        self.run()
-    }
-
     pub(crate) fn interpret<'m>(&mut self, source: String) -> InterpretResult {
         let chars: Vec<char> = source.chars().collect();
         let scanner = Scanner::init(0, 0, chars);
@@ -454,8 +513,10 @@ impl VM {
             return InterpretResult::InterpretCompileError;
         }
         self.ip = 0;
+
         self.push(Value::from(function_obj.clone()));
         let function = Into::<Function>::into(function_obj);
+        println!("Main function: {:?}", function.clone());
         self.create_call_frame(function, 0);
         metrics::record("VM run time".to_string(), || self.run())
     }

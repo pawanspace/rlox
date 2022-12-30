@@ -197,7 +197,7 @@ impl<'c> Compiler<'c> {
         while !self.match_token(TokenType::Eof) {
             self.declaration();
         }
-        self.end_compiler();
+        self.end_compiler();        
         (self.parser.had_error, self.function.clone())
     }
 
@@ -257,26 +257,42 @@ impl<'c> Compiler<'c> {
         );
         let mut function = Function::new_function(FunctionType::Function);
         let token = self.parser.previous.unwrap();
-        let str_value = & self.source[token.start..token.start + token.length];
+        let str_value = &self.source[token.start..token.start + token.length];
         let hash_value = hasher::hash(str_value);
         let exiting_value = compiler.table.find_entry_with_value(str_value, hash_value);
         function.name = exiting_value.cloned();
-        let function_obj = Obj::Fun(Function::new_function(FunctionType::Function));
+        let function_obj = Obj::Fun(function);
         compiler.function = function_obj;
         compiler.begin_scope();
         compiler.consume(TokenType::LeftParen, "Expect '(' after function name");
+        let mut arity = 0;
         //@todo parse arguments
         if !compiler.check(TokenType::RightParen) {
-            compiler.parse_and_define_parameter(&mut function);
+            compiler.parse_and_define_parameter();
+            arity += 1;
             loop {
                 match compiler.match_token(TokenType::Comma) {
                     true => {
-                        compiler.parse_and_define_parameter(&mut function);
+                        compiler.parse_and_define_parameter();
+                        arity += 1;
                     }
                     false => break,
                 }
             }
         }
+        
+        if arity >= 255 {
+            compiler.error_at_current("Can't have more than 255 parameters.");
+        }
+
+        match compiler.function.clone() {
+            Obj::Fun(mut function) => {
+                function.arity = arity;
+                compiler.function = Obj::Fun(function);
+            },
+            _ => ()
+        };
+        
         compiler.consume(
             TokenType::RightParen,
             "Expect ')' at the end of function params",
@@ -288,7 +304,7 @@ impl<'c> Compiler<'c> {
         compiler.block();
         compiler.end_scope();
         compiler.end_compiler();
-        
+
         // reset old compiler state
         self.parser = compiler.parser;
         self.scanner = compiler.scanner;
@@ -296,11 +312,7 @@ impl<'c> Compiler<'c> {
         self.emit_constant(Value::from(new_function));
     }
 
-    fn parse_and_define_parameter(&mut self, function: &mut Function) {
-        function.arity += 1;
-        if function.arity >= 255 {
-            self.error_at_current("Can't have more than 255 parameters.");
-        }
+    fn parse_and_define_parameter(&mut self) {        
         let param_index = self.parse_variable();
         self.define_variable(param_index);
     }
@@ -421,6 +433,8 @@ impl<'c> Compiler<'c> {
             self.print_stmt();
         } else if self.match_token(TokenType::If) {
             self.if_stmt();
+        } else if self.match_token(TokenType::Return) {
+            self.return_stmt();
         } else if self.match_token(TokenType::While) {
             self.while_stmt();
         } else if self.match_token(TokenType::For) {
@@ -431,6 +445,16 @@ impl<'c> Compiler<'c> {
             self.end_scope();
         } else {
             self.expression_statement();
+        }
+    }
+
+    fn return_stmt(&mut self) {
+        if self.match_token(TokenType::Semicolon) {
+            self.emit_return();
+        } else {
+            self.expression();
+            self.consume_semicolon();
+            self.emit_opcode(OpCode::Return);
         }
     }
 
@@ -707,13 +731,14 @@ impl<'c> Compiler<'c> {
         self.emit_opcode(opcode_2);
     }
 
-    fn end_compiler(&mut self) {
+    fn end_compiler(&mut self) {        
         self.emit_return();
         //self.current_chunk().disassemble_chunk("Compiler");
     }
 
     fn emit_return(&mut self) {
-        self.emit_opcode(OpCode::Return)
+        self.emit_opcode(OpCode::Nil);
+        self.emit_opcode(OpCode::Return);
     }
 
     fn expression(&mut self) {
