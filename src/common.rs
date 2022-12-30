@@ -1,7 +1,7 @@
 use num_derive::FromPrimitive;
 use std::fmt::Debug;
 
-use crate::{hasher, memory, scanner::Token, chunk::Chunk};
+use crate::{hasher, memory, chunk::Chunk};
 
 #[derive(Debug)]
 #[repr(u8)]

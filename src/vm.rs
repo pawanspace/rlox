@@ -40,7 +40,7 @@ pub(crate) struct CallFrame {
 }
 
 fn random_color(raw: Vec<Color>) -> Color {
-    let (i, &color) = raw.iter().enumerate().choose(&mut thread_rng()).unwrap();
+    let (_i, &color) = raw.iter().enumerate().choose(&mut thread_rng()).unwrap();
     color
 }
 

@@ -242,7 +242,7 @@ mod tests {
         let mut map = Table::init(1);
         let one = create_fat_ptr(&mut "one");
         let two = create_fat_ptr(&mut "two");
-        let three = create_fat_ptr(&mut "three");
+        let _three = create_fat_ptr(&mut "three");
 
         map.insert(one.clone(), true); 
         assert_eq!(map.capacity, 3);

@@ -1,5 +1,5 @@
 use clap::Parser;
-use std::{env, fs};
+use std::{fs};
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
