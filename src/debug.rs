@@ -1,26 +1,22 @@
 use crate::common::{Obj, Value};
 use crate::memory;
 
+static INFO: bool = true;
+static DEBUG: bool = true;
+pub(crate) static PRINT_STACK: bool = false;
+
 pub fn debug(message: String, new_line: bool) {
-    if is_debug() && new_line {
+    if DEBUG && new_line {
         println!("[DEBUG] {}", message)
-    } else if is_debug() && !new_line {
+    } else if DEBUG && !new_line {
         print!("{}", message)
     }
 }
 
-pub fn info(message: String) {
-    println!("[INFO] {:?}", message)
-}
-
-pub fn is_debug() -> bool {
-    // let debug_flag = std::env::args().nth(1);
-    // Some("debug") == debug_flag.as_deref()
-    true
-}
-
-pub fn print_stack() -> bool {
-    false
+pub fn info(message: String) {    
+    if INFO {
+        println!("[INFO] {:?}", message);
+    }
 }
 
 pub(crate) fn print_value(value: Value, new_line: bool) {

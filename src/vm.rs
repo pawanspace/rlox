@@ -73,15 +73,8 @@ macro_rules! READ_BYTE {
 macro_rules! READ_CONSTANT {
     ($self:ident, $frame:ident) => {{
         let index = READ_BYTE!($self, $frame) as usize;
-        println!("Reading constant from index: {:?}", index);
+        debug::info(format!("Reading constant from index: {:?}", index));
         $frame.function.chunk.constants.values.get(index)
-    }};
-}
-
-macro_rules! READ_FAT_PTR {
-    ($self:ident, $value:tt) => {{
-        let obj = Into::<Obj>::into($value);
-        Into::<FatPointer>::into(obj)
     }};
 }
 
@@ -160,7 +153,7 @@ impl VM {
     }
 
     fn runtime_error(&self, message: &str) {
-        println!("Runtime error: {:?}", message);
+        debug::info(format!("Runtime error: {:?}", message));
     }
 
     fn run(&mut self) -> InterpretResult {
@@ -257,8 +250,8 @@ impl VM {
                 }
                 Some(OpCode::DefineGlobalVariable) => {
                     let constant = READ_CONSTANT!(self, current_frame).unwrap().clone();
-                    println!("DefineGlobalVariable: Read constant value: {:?}", constant);
-                    let variable_name = READ_FAT_PTR!(self, constant);
+                    debug::info(format!("DefineGlobalVariable: Read constant value: {:?}", constant));
+                    let variable_name = Into::<FatPointer>::into(constant);
                     let value = self.peek(0);
                     self.globals.insert(variable_name, value);
                     self.pop();
@@ -305,15 +298,15 @@ impl VM {
                 }
                 Some(OpCode::GetGlobalVariable) => {
                     let constant = READ_CONSTANT!(self, current_frame).unwrap().clone();
-                    println!("GetGlobalVariable: Read constant value: {:?}", constant);
-                    let variable_name = READ_FAT_PTR!(self, constant);
+                    debug::info(format!("GetGlobalVariable: Read constant value: {:?}", constant));
+                    let variable_name = Into::<FatPointer>::into(constant);
                     if let Some(ret) = self.push_obj_value_to_stack(variable_name) {
                         return ret;
                     }
                 }
                 Some(OpCode::SetGlobalVariable) => {
                     let constant = READ_CONSTANT!(self, current_frame).unwrap().clone();
-                    let variable_name = READ_FAT_PTR!(self, constant);
+                    let variable_name = Into::<FatPointer>::into(constant);
                     if let Some(ret) = self.set_global_variable(variable_name) {
                         return ret;
                     }
@@ -322,7 +315,7 @@ impl VM {
                     debug::print_value(self.pop(), true);
                 }
                 _ => {
-                    println!("Stopping vm: {:?}", opcode);
+                    debug::info(format!("Stopping vm: {:?}", opcode));
                     self.call_frames[self.frame_count - 1] = Some(current_frame);
                     return InterpretResult::InterpretOk;
                 }
@@ -354,35 +347,35 @@ impl VM {
         match value {
             Some(val) => match value {
                 Some(Value::Boolean(v)) => {
-                    println!("Boolean value pushing to stack {:?}", v);
+                    debug::info(format!("Boolean value pushing to stack {:?}", v));
                     self.push(val.clone());
                 }
                 Some(Value::Number(v)) => {
-                    println!("Number value pushing to stack {:?}", v);
+                    debug::info(format!("Number value pushing to stack {:?}", v));
                     self.push(val.clone());
                 }
                 Some(Value::Obj(obj)) => match obj {
                     Obj::Str(ptr) => {
                         let c_value = memory::read_string(ptr.ptr, ptr.size);
-                        println!("String Object value pushing to stack {:?}", c_value);
+                        debug::info(format!("String Object value pushing to stack {:?}", c_value));
                         self.push(val.clone());
                     }
                     Obj::Fun(function) => {
                         let function_name = function.name.as_ref().unwrap();
                         let name = memory::read_string(function_name.ptr, function_name.size);
-                        println!(
+                        debug::info(format!(
                             "Function Object value pushing to stack {:?} with name: {:?}",
                             function, name
-                        );
+                        ));
                         self.push(val.clone());
                     }
                     _ => {
-                        println!("Unknown object pushing to stack");
+                        debug::info(format!("Unknown object pushing to stack"));
                         self.push(val.clone());
                     }
                 },
                 _ => {
-                    println!("Unknown value pushing to stack");
+                    debug::info(format!("Unknown value pushing to stack"));
                     self.push(val.clone());
                 }
             },
@@ -403,13 +396,13 @@ impl VM {
         opcode: &Option<OpCode>,
     ) {
         current_frame.print_name();
-        if debug::is_debug() && !matches!(opcode, None) {
-            if debug::print_stack() {
-                println!("##### Stack[Start] ###### \n");
+        if debug::PRINT_STACK && !matches!(opcode, None) {
+            if debug::PRINT_STACK {
+                debug::info(format!("##### Stack[Start] ###### \n"));
                 for i in 0..self.stack.len() {
                     print!("[{:?}] ", self.stack[i]);
                 }
-                println!("\n\n ##### Stack[End] ######");
+                debug::info(format!("\n\n ##### Stack[End] ######"));
             }
 
             current_frame
@@ -430,7 +423,7 @@ impl VM {
         }
         // + 1 for the first stack entry
         self.stack_top = current_frame.cf_stack_top;
-        println!("Pushing return value to stack: {:?}", result);
+        debug::info(format!("Pushing return value to stack: {:?}", result));
         self.push(result);
         false
     }
@@ -547,7 +540,7 @@ impl VM {
 
         self.push(Value::from(function_obj.clone()));
         let function = Into::<Function>::into(function_obj);
-        println!("Main function: {:?}", function.clone());
+        debug::info(format!("Main function: {:?}", function.clone()));
         self.create_call_frame(function, 0);
         metrics::record("VM run time".to_string(), || self.run())
     }
