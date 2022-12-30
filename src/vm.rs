@@ -243,6 +243,10 @@ impl VM {
                 Some(OpCode::Pop) => {
                     self.pop();
                 }
+                Some(OpCode::Call) => {
+                    let arg_count = READ_BYTE!(self, current_frame);
+
+                }
                 Some(OpCode::JumpIfFalse) => {                    
                     if self.is_falsey(self.peek(0)) {
                         //current_frame.ip += offset as usize;
@@ -327,6 +331,32 @@ impl VM {
                 }
             }
         }        
+    }
+
+
+    fn execute_function(&mut self, callee: Value, arg_count: u8) -> bool {
+        if callee.is_obj() {
+            let obj = Into::<Obj>::into(callee);
+            match obj {
+                Obj::Fun(function) => {
+                    let call_frame = CallFrame {
+                        function,
+                        ip: 0, //@todo check if this value should be 0 or not
+                        /**
+                         * The funny little - 1 is to account for stack slot zero which the compiler 
+                         * set aside for when we add methods later. 
+                         * The parameters start at slot one so we make the window start 
+                         * one slot earlier to align them with the arguments.
+                         * -1 is for name of the function
+                         */
+                        cf_stack_top: self.stack_top - ((arg_count - 1) as usize),
+                    };                    
+                },
+                _ => ()
+            }
+        }
+        self.runtime_error("Can only execute function");
+        false
     }
 
 

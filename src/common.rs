@@ -31,7 +31,8 @@ pub(crate) enum OpCode {
     GetLocalVariable = 22,
     JumpIfFalse = 23,
     Jump = 24,
-    Loop = 25
+    Loop = 25,
+    Call = 26
 }
 
 #[derive(Debug, Clone)]

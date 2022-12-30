@@ -1,12 +1,9 @@
-use std::clone;
-
 use crate::chunk::Chunk;
 use crate::common::{FatPointer, Obj, OpCode, Value, Function, FunctionType};
 use crate::hash_map::Table;
 use crate::hasher;
 use crate::memory;
 use crate::scanner::{Scanner, Token, TokenType};
-use crate::value::ValueArray;
 use num_derive::FromPrimitive;
 
 extern crate num;
@@ -40,13 +37,14 @@ const STRING: Option<ParseFn> = Some(|compiler, can_assign| {
 const VARIABLE: Option<ParseFn> = Some(|compiler, can_assign| compiler.variable(can_assign));
 const OR: Option<ParseFn> = Some(|compiler, can_assign| compiler.or(can_assign));
 const AND: Option<ParseFn> = Some(|compiler, can_assign| compiler.and(can_assign));
+const CALL: Option<ParseFn> = Some(|compiler, can_assign| compiler.call(can_assign));
 
 fn parse_rule(token_type: TokenType) -> ParseRule {
     match token_type {
         TokenType::LeftParen => ParseRule {
             prefix: GROUPING,
-            infix: NOOP,
-            precedence: Precedence::None,
+            infix: CALL,
+            precedence: Precedence::Call,
         },
         TokenType::Minus | TokenType::Bang => ParseRule {
             prefix: UNARY,
@@ -141,6 +139,7 @@ struct ParseRule {
     precedence: Precedence,
 }
 
+#[derive(Debug, Clone)]
 struct Parser {
     current: Option<Token>,
     previous: Option<Token>,
@@ -161,7 +160,7 @@ pub(crate) struct Compiler<'c> {
     function: Obj,
     locals: Vec<Local>,
     local_count: usize,
-    scope_depth: usize,
+    scope_depth: usize,    
 }
 
 impl<'c> Compiler<'c> {
@@ -179,7 +178,7 @@ impl<'c> Compiler<'c> {
         let mut locals = vec![];
         locals.resize(u8::MAX as usize, Local::Empty);
         
-        Compiler {
+        let compiler = Compiler {
             scanner,
             parser,            
             source: "".to_string(),
@@ -187,11 +186,13 @@ impl<'c> Compiler<'c> {
             locals,
             local_count: 1, // starting with 1 take first spot for top level function
             scope_depth: 0,
-            function: Obj::Fun(Function::new_function(FunctionType::Script))
-        }
+            function: Obj::Fun(Function::new_function(FunctionType::Script))            
+        };
+        
+        compiler
     }
 
-    pub(crate) fn compile(&mut self, source: String) -> (bool, Obj) {
+    pub(crate) fn compile(&mut self, source: String) -> (bool, Obj) {        
         self.source = source;
         let chars: Vec<char> = self.source.chars().collect();
         self.scanner.refresh(0, self.source.len(), chars);
@@ -242,42 +243,46 @@ impl<'c> Compiler<'c> {
             .write_index(index, prev_token.line);
     }
 
-    fn function(&mut self) {        
-        let enclosing = self.function.clone();
+    fn function(&mut self) {     
+        let mut compiler = Compiler::init(self.scanner.clone(), self.table);            
+        compiler.parser = self.parser.clone();
+        compiler.source = self.source.clone();
         let mut function = Function::new_function(FunctionType::Function);        
         let token = self.parser.previous.unwrap();        
         let str_value = &mut self.source[token.start..token.start + token.length];
         let hash_value = hasher::hash(str_value);
-        let exiting_value = self.table.find_entry_with_value(str_value, hash_value);
+        let exiting_value = compiler.table.find_entry_with_value(str_value, hash_value);
         function.name = exiting_value.cloned();
         let function_obj = Obj::Fun(Function::new_function(FunctionType::Function));        
-        self.function = function_obj;
-        self.begin_scope();
-        self.consume(TokenType::LeftParen, "Expect '(' after function name");
+        compiler.function = function_obj;
+        compiler.begin_scope();
+        compiler.consume(TokenType::LeftParen, "Expect '(' after function name");
         //@todo parse arguments
-        if !self.check(TokenType::RightParen) {
-            self.parse_and_define_parameter(&mut function);
+        if !compiler.check(TokenType::RightParen) {
+            compiler.parse_and_define_parameter(&mut function);
             loop {
-                match self.match_token(TokenType::Comma) {
+                match compiler.match_token(TokenType::Comma) {
                     true => {
-                        self.parse_and_define_parameter(&mut function);
+                        compiler.parse_and_define_parameter(&mut function);
                     }, 
                     false => break
                 } 
             }            
         }
-        self.consume(
+        compiler.consume(
             TokenType::RightParen,
             "Expect ')' at the end of function params"
         );
-        self.consume(
+        compiler.consume(
             TokenType::LeftBrace,
             "Expect '{' at the beginning  of function body"
         );
-        self.block();
-        self.end_scope();   
-        let new_function = self.function.clone();
-        self.function = enclosing;     
+        compiler.block();
+        compiler.end_scope();   
+        compiler.end_compiler();
+        self.parser = compiler.parser;
+        self.scanner = compiler.scanner;        
+        let new_function = compiler.function.clone();           
         self.emit_constant(Value::from(new_function));
     }
 
@@ -744,7 +749,31 @@ impl<'c> Compiler<'c> {
         self.patch_jump(end_jump_offset);
     }
 
-    fn string(&mut self, can_assign: bool, emit_constant: bool) -> usize {
+    fn call(&mut self, _can_assign: bool) {
+        let mut arg_count = 0;
+        if !self.check(TokenType::RightParen) {
+            self.expression();
+            arg_count += 1;
+            loop {
+                match self.match_token(TokenType::Comma) {
+                    true => {
+                        self.expression();
+                        arg_count += 1;
+                        if arg_count == 255 {
+                            self.error("Can't have more than 255 arguments");
+                        }
+                    }, 
+                    false => break
+                } 
+            }            
+        }
+        self.consume(TokenType::RightParen, "Expected ')' in function call.");        
+        self.emit_opcode(OpCode::Call);
+        self.emit_byte(arg_count);
+    }
+
+
+    fn string(&mut self, _can_assign: bool, emit_constant: bool) -> usize {
         let token = self.parser.previous.unwrap();
         let str_value = &mut self.source[token.start..token.start + token.length];
         let hash_value = hasher::hash(str_value);

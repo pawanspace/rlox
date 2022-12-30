@@ -57,6 +57,7 @@ pub(crate) struct Token {
     pub line: u32,
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct Scanner {
     start: usize,
     current: usize,
