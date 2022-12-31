@@ -35,6 +35,7 @@ pub(crate) enum OpCode {
     Jump = 24,
     Loop = 25,
     Call = 26,
+    Closure = 27
 }
 
 #[derive(Debug, Clone)]
@@ -184,12 +185,14 @@ impl Function {
 pub(crate) enum FunctionType {
     Function,
     Script,
+    Closure
 }
 
 #[derive(Debug, Clone)]
 pub(crate) enum Obj {
     Str(FatPointer),
-    Fun(Function),
+    Fun(Function),    
+    Closure(Box<Obj>),
     Nil,
 }
 

@@ -309,7 +309,9 @@ impl<'c> Compiler<'c> {
         self.parser = compiler.parser;
         self.scanner = compiler.scanner;
         let new_function = compiler.function.clone();
-        self.emit_constant(Value::from(new_function));
+        let constant_index = self.current_chunk().add_constant(Value::from(new_function));        
+        self.emit_opcode(OpCode::Closure);        
+        self.emit_byte(constant_index as u8);
     }
 
     fn parse_and_define_parameter(&mut self) {

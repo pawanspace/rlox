@@ -65,14 +65,14 @@ fn repl() {
 }
 
 fn main() {
-    env::set_var("RUST_BACKTRACE", "full");
+     env::set_var("RUST_BACKTRACE", "full");
     let args = Cli::parse();
     if args.path.as_os_str().is_empty() {
         repl();
     } else {    
         metrics::record("Total time".to_string(), || {
-            run_file(PathBuf::from("first.lox"))            
+            run_file(args.path.clone())            
         });    
         metrics::display();
-    }
+   }
 }

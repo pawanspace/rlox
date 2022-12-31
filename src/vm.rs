@@ -73,7 +73,7 @@ macro_rules! READ_BYTE {
 macro_rules! READ_CONSTANT {
     ($self:ident, $frame:ident) => {{
         let index = READ_BYTE!($self, $frame) as usize;
-        debug::info(format!("Reading constant from index: {:?}", index));
+        debug::info(format!("Reading constant from index: {:?}", index));        
         $frame.function.chunk.constants.values.get(index)
     }};
 }
@@ -258,6 +258,12 @@ impl VM {
                 }
                 Some(OpCode::Pop) => {
                     self.pop();
+                }
+                Some(OpCode::Closure) => {
+                    let constant = READ_CONSTANT!(self, current_frame).unwrap().clone();
+                    let function_obj = Into::<Obj>::into(constant);
+                    let closure = Obj::Closure(Box::new(function_obj));
+                    self.push(Value::from(closure));
                 }
                 Some(OpCode::Call) => {
                     let arg_count = READ_BYTE!(self, current_frame);
@@ -445,6 +451,20 @@ impl VM {
                     self.create_call_frame(function, arg_count);
                     return true;
                 }
+                Obj::Closure(obj) => {
+                    let function = Into::<Function>::into(*obj);
+                    if function.arity != arg_count {
+                        self.runtime_error(
+                            format!(
+                                "Expected: {:?} arguments but received: {:?}",
+                                function.arity, arg_count
+                            )
+                            .as_str(),
+                        );
+                    }
+                    self.create_call_frame(function, arg_count);
+                    return true;
+                }
                 _ => (),
             }
         }
@@ -538,7 +558,7 @@ impl VM {
         }
         self.ip = 0;
 
-        self.push(Value::from(function_obj.clone()));
+        self.push(Value::from(Obj::Closure(Box::new(function_obj.clone()))));
         let function = Into::<Function>::into(function_obj);
         debug::info(format!("Main function: {:?}", function.clone()));
         self.create_call_frame(function, 0);
