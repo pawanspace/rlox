@@ -802,40 +802,58 @@ impl<'c> Compiler<'c> {
     }
 
     fn string(&mut self, _can_assign: bool, emit_constant: bool) -> usize {
-        let token = self.parser.previous.unwrap();
-        let str_value = &mut self.source[token.start..token.start + token.length];
-        let hash_value = hasher::hash(str_value);
-
-        let exiting_value = self.table.find_entry_with_value(str_value, hash_value);
-
+        let (str_value, hash_value) = self.prev_token_to_string();
+        let exiting_value = self.get_existing_string(&str_value, hash_value);
         match exiting_value {
             Some(existing) => {
-                let obj_string = Obj::from(existing.clone());
-                let value = Value::from(obj_string);
-                if emit_constant {
-                    self.emit_constant(value)
-                } else {
-                    self.current_chunk().add_constant(value)
-                }
+                let existing_ptr = existing.to_owned();
+                self.reuse_existing_string(existing_ptr, emit_constant)
             }
             None => {
-                let str_ptr = memory::allocate::<String>();
-                memory::copy(str_value.as_mut_ptr(), str_ptr, str_value.len(), 0);
-                let fat_ptr = FatPointer {
-                    ptr: str_ptr,
-                    size: str_value.len(),
-                    hash: hash_value,
-                };
-                let obj_string = Obj::from(fat_ptr.clone());
-                let value = Value::from(obj_string);
-                self.table.insert(fat_ptr.clone(), Value::Missing);
-                if emit_constant {
-                    self.emit_constant(value)
-                } else {
-                    self.current_chunk().add_constant(value)
-                }
+                self.create_new_string(str_value, hash_value, emit_constant)
             }
         }
+    }
+
+    fn reuse_existing_string(&mut self, existing: FatPointer, emit_constant: bool) -> usize {
+        let obj_string = Obj::from(existing);
+        let value = Value::from(obj_string);
+        if emit_constant {
+            self.emit_constant(value)
+        } else {
+            self.current_chunk().add_constant(value)
+        }
+    }
+
+    fn create_new_string(&mut self, mut str_value: String, hash_value: u32, emit_constant: bool) -> usize {
+        let str_ptr = memory::allocate::<String>();
+        let src = str_value.as_mut_ptr();
+        memory::copy(src, str_ptr, str_value.len(), 0);
+        let fat_ptr = FatPointer {
+            ptr: str_ptr,
+            size: str_value.len(),
+            hash: hash_value,
+        };
+        let obj_string = Obj::from(fat_ptr.clone());
+        let value = Value::from(obj_string);
+        self.table.insert(fat_ptr.clone(), Value::Missing);
+        if emit_constant {
+            self.emit_constant(value)
+        } else {
+            self.current_chunk().add_constant(value)
+        }
+    }
+
+    fn get_existing_string(&mut self, str_value: &str, hash_value: u32) ->  Option<&FatPointer> {        
+        let exiting_value = self.table.find_entry_with_value(str_value, hash_value);
+        exiting_value
+    }
+
+    fn prev_token_to_string(&mut self) -> (String, u32) {
+        let token = self.parser.previous.unwrap();
+        let str_value = self.token_name(token).to_owned();
+        let hash_value = hasher::hash(&str_value);
+        (str_value, hash_value)
     }
 
     fn grouping(&mut self, _can_assign: bool) {
