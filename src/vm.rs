@@ -62,7 +62,7 @@ pub enum InterpretResult {
 
 macro_rules! READ_BYTE {
     ($self:ident, $frame:ident) => {
-        *{
+        *{            
             let c = $frame.function.chunk.code.get($frame.ip as usize).clone();
             $frame.ip += 1;
             c.unwrap()
@@ -402,7 +402,7 @@ impl VM {
         opcode: &Option<OpCode>,
     ) {
         current_frame.print_name();
-        if debug::PRINT_STACK && !matches!(opcode, None) {
+        if !matches!(opcode, None) {
             if debug::PRINT_STACK {
                 debug::info(format!("##### Stack[Start] ###### \n"));
                 for i in 0..self.stack.len() {

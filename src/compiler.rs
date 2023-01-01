@@ -151,16 +151,34 @@ pub(crate) enum Local {
     Filled(Token, usize),
     Empty,
 }
+#[derive(Debug, Clone)]
+pub(crate) struct CompilerContext {    
+    function: Obj,
+    locals: Vec<Local>,
+    local_count: usize,    
+}
+
+impl CompilerContext {
+    fn init() -> CompilerContext {
+        let mut locals = vec![];
+        locals.resize(u8::MAX as usize, Local::Empty);
+        CompilerContext {
+            locals,
+            local_count: 1, // starting with 1 take first spot for top level function            
+            function: Obj::Fun(Function::new_function(FunctionType::Script))
+        }
+    }
+}
+
 
 pub(crate) struct Compiler<'c> {
+    table: &'c mut Table<Value>,
     scanner: Scanner,
     parser: Parser,
     source: String,
-    table: &'c mut Table<Value>,
-    function: Obj,
-    locals: Vec<Local>,
-    local_count: usize,
+    current_context: usize,
     scope_depth: usize,
+    contexts: Vec<CompilerContext>
 }
 
 impl<'c> Compiler<'c> {
@@ -172,18 +190,17 @@ impl<'c> Compiler<'c> {
             panic_mode: false,
         };
 
-        let mut locals = vec![];
-        locals.resize(u8::MAX as usize, Local::Empty);
+        let mut contexts: Vec<CompilerContext>= vec![];
+        contexts.push(CompilerContext::init());
 
         let compiler = Compiler {
             scanner,
             parser,
             source: "".to_string(),
-            table,
-            locals,
-            local_count: 1, // starting with 1 take first spot for top level function
+            table,            
+            contexts,
             scope_depth: 0,
-            function: Obj::Fun(Function::new_function(FunctionType::Script)),
+            current_context: 0
         };
 
         compiler
@@ -198,7 +215,7 @@ impl<'c> Compiler<'c> {
             self.declaration();
         }
         self.end_compiler();
-        (self.parser.had_error, self.function.clone())
+        (self.parser.had_error, self.current_context().function.clone())
     }
 
     fn advance(&mut self) {
@@ -236,44 +253,30 @@ impl<'c> Compiler<'c> {
         self.current_chunk().write_index(index, prev_token.line);
     }
 
-    fn clone_compiler(
-        scanner: Scanner,
-        table: &'c mut Table<Value>,
-        source: String,
-        parser: Parser,
-    ) -> Compiler {
-        let mut compiler = Compiler::init(scanner, table);
-        compiler.parser = parser;
-        compiler.source = source;
-        compiler
-    }
 
     fn function(&mut self) {
-        let mut compiler = Compiler::clone_compiler(
-            self.scanner.clone(),
-            self.table,
-            self.source.clone(),
-            self.parser.clone(),
-        );
-        let mut function = Function::new_function(FunctionType::Function);
+        let mut context = CompilerContext::init();
+        let mut function = Function::new_function(FunctionType::Closure);
         let token = self.parser.previous.unwrap();
         let str_value = &self.source[token.start..token.start + token.length];
         let hash_value = hasher::hash(str_value);
-        let exiting_value = compiler.table.find_entry_with_value(str_value, hash_value);
+        let exiting_value = self.table.find_entry_with_value(str_value, hash_value);
         function.name = exiting_value.cloned();
         let function_obj = Obj::Fun(function);
-        compiler.function = function_obj;
-        compiler.begin_scope();
-        compiler.consume(TokenType::LeftParen, "Expect '(' after function name");
+        context.function = function_obj;
+        self.contexts.push(context);
+        self.current_context += 1; 
+        self.begin_scope();
+        self.consume(TokenType::LeftParen, "Expect '(' after function name");
         let mut arity = 0;
         //@todo parse arguments
-        if !compiler.check(TokenType::RightParen) {
-            compiler.parse_and_define_parameter();
+        if !self.check(TokenType::RightParen) {
+            self.parse_and_define_parameter();
             arity += 1;
             loop {
-                match compiler.match_token(TokenType::Comma) {
+                match self.match_token(TokenType::Comma) {
                     true => {
-                        compiler.parse_and_define_parameter();
+                        self.parse_and_define_parameter();
                         arity += 1;
                     }
                     false => break,
@@ -282,34 +285,32 @@ impl<'c> Compiler<'c> {
         }
 
         if arity >= 255 {
-            compiler.error_at_current("Can't have more than 255 parameters.");
+            self.error_at_current("Can't have more than 255 parameters.");
         }
 
-        match compiler.function.clone() {
+        match self.current_context().function.clone() {
             Obj::Fun(mut function) => {
                 function.arity = arity;
-                compiler.function = Obj::Fun(function);
+                self.current_context().function = Obj::Fun(function);
             }
             _ => (),
         };
 
-        compiler.consume(
+        self.consume(
             TokenType::RightParen,
             "Expect ')' at the end of function params",
         );
-        compiler.consume(
+        self.consume(
             TokenType::LeftBrace,
             "Expect '{' at the beginning  of function body",
-        );
-        compiler.block();
-        compiler.end_scope();
-        compiler.end_compiler();
-
-        // reset old compiler state
-        self.parser = compiler.parser;
-        self.scanner = compiler.scanner;
-        let new_function = compiler.function.clone();
-        let constant_index = self.current_chunk().add_constant(Value::from(new_function));        
+        );        
+        self.block();        
+        self.end_scope();
+        self.end_compiler();        
+        let inner_function = self.contexts[self.current_context + 1].function.clone();
+        self.contexts.remove(self.current_context + 1);
+        // reset old compiler state        
+        let constant_index = self.current_chunk().add_constant(Value::from(inner_function));        
         self.emit_opcode(OpCode::Closure);        
         self.emit_byte(constant_index as u8);
     }
@@ -343,7 +344,7 @@ impl<'c> Compiler<'c> {
 
     fn declare_variable(&mut self) {
         if self.scope_depth > 0 {
-            if self.local_count == 255 {
+            if self.current_context().local_count == 255 {
                 self.error("Too many local variables in function.");
                 return;
             }
@@ -355,28 +356,31 @@ impl<'c> Compiler<'c> {
             if matching_token != -1 {
                 self.error("Already a variable with this name in this scope.");
             }
-
-            self.locals[self.local_count] = local;
-            self.local_count += 1;
+            let local_count = self.current_context().local_count;
+            self.current_context().locals[local_count] = local;
+            self.current_context().local_count += 1;
         }
     }
 
     fn resolve_local(&mut self, token: Token) -> i32 {
-        if self.local_count <= 0 {
+        if self.current_context().local_count <= 0 {
             return -1;
         }
+        let scope_depth = self.scope_depth;
+        let locals = self.current_context().locals.clone();
 
-        for (idx, existing) in self.locals.iter().enumerate().rev() {
+        for (idx, existing) in locals.iter().enumerate().rev() {
             match existing {
                 Local::Filled(existing_token, depth) => {
-                    if depth.ge(&self.scope_depth) {
+                    if depth.ge(&scope_depth) {
                         if token.length != existing_token.length {
                             continue;
                         }
-                        let existing_name = self.token_name(existing_token.clone());
+                        let existing_token_deref = existing_token.clone();
+                        let existing_name = self.token_name(existing_token_deref);
                         let local_name = self.token_name(token);
                         if local_name == existing_name {
-                            return idx as i32;
+                            return idx as i32
                         }
                     }
                 }
@@ -384,6 +388,12 @@ impl<'c> Compiler<'c> {
             }
         }
         -1
+    }
+
+    fn fun_name(&mut self, existing_token: &Token, token: Token) -> bool {
+        let existing_name = self.token_name(existing_token.clone());
+        let local_name = self.token_name(token);
+        local_name == existing_name        
     }
 
     fn variable(&mut self, can_assign: bool) {
@@ -606,21 +616,21 @@ impl<'c> Compiler<'c> {
 
     fn end_scope(&mut self) {
         self.scope_depth -= 1;
-        let scoped_locals = self
-            .locals
+        let scoped_locals = self.current_context()
+            .locals.clone()
             .iter()
             .filter(|local| match local {
                 Local::Filled(_, depth) => depth.gt(&self.scope_depth),
                 _ => false,
             })
             .count();
-        if self.local_count == 0 {
+        if self.current_context().local_count == 0 {
             return;
         }
         for _ in 1..=scoped_locals {
             self.emit_opcode(OpCode::Pop);
         }
-        self.local_count -= scoped_locals;
+        self.current_context().local_count -= scoped_locals;
     }
 
     fn expression_statement(&mut self) {
@@ -735,7 +745,10 @@ impl<'c> Compiler<'c> {
 
     fn end_compiler(&mut self) {
         self.emit_return();
-        //self.current_chunk().disassemble_chunk("Compiler");
+        // do it only for inner functions
+        if self.current_context > 0 {        
+            self.current_context -= 1;   
+        }     
     }
 
     fn emit_return(&mut self) {
@@ -952,7 +965,11 @@ impl<'c> Compiler<'c> {
     }
 
     fn current_chunk(&mut self) -> &mut Chunk {
-        self.function.get_func_chunk()
+        self.current_context().function.get_func_chunk()
+    }
+
+    fn current_context(&mut self) -> &mut CompilerContext {
+        self.contexts.get_mut(self.current_context).unwrap()
     }
 
     fn previous_token(&self) -> Token {
