@@ -2,7 +2,7 @@ use clap::Parser;
 use std::{fs, env};
 
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 mod chunk;
 #[macro_use]
 mod common;
@@ -66,13 +66,13 @@ fn repl() {
 
 fn main() {
      env::set_var("RUST_BACKTRACE", "full");
-    let args = Cli::parse();
-    if args.path.as_os_str().is_empty() {
-        repl();
-    } else {    
+    // let args = Cli::parse();
+    // if args.path.as_os_str().is_empty() {
+    //     repl();
+    // } else {    
         metrics::record("Total time".to_string(), || {
-            run_file(args.path.clone())            
+            run_file(PathBuf::from("first.lox")) 
         });    
-        metrics::display();
-   }
+ //       metrics::display();
+   //}
 }

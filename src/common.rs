@@ -35,7 +35,9 @@ pub(crate) enum OpCode {
     Jump = 24,
     Loop = 25,
     Call = 26,
-    Closure = 27
+    Closure = 27,
+    SetUpValue = 28,
+    GetUpValue = 29,
 }
 
 #[derive(Debug, Clone)]

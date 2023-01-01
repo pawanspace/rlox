@@ -151,20 +151,35 @@ pub(crate) enum Local {
     Filled(Token, usize),
     Empty,
 }
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum UpValue {
+    Filled(u8, bool),
+    Empty,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct CompilerContext {    
     function: Obj,
     locals: Vec<Local>,
-    local_count: usize,    
+    local_count: usize, 
+    up_values: Vec<UpValue>,
+    up_value_count: usize,   
 }
 
 impl CompilerContext {
     fn init() -> CompilerContext {
         let mut locals = vec![];
         locals.resize(u8::MAX as usize, Local::Empty);
+
+        let mut up_values = vec![];
+        up_values.resize(u8::MAX as usize, UpValue::Empty);
+
         CompilerContext {
             locals,
             local_count: 1, // starting with 1 take first spot for top level function            
+            up_values,
+            up_value_count: 0,
             function: Obj::Fun(Function::new_function(FunctionType::Script))
         }
     }
@@ -308,11 +323,78 @@ impl<'c> Compiler<'c> {
         self.end_scope();
         self.end_compiler();        
         let inner_function = self.contexts[self.current_context + 1].function.clone();
+        let up_values = self.contexts[self.current_context + 1].up_values.clone();
         self.contexts.remove(self.current_context + 1);
         // reset old compiler state        
         let constant_index = self.current_chunk().add_constant(Value::from(inner_function));        
         self.emit_opcode(OpCode::Closure);        
-        self.emit_byte(constant_index as u8);
+        self.emit_byte(constant_index as u8);        
+        up_values.iter().for_each(|up_value| { 
+            match up_value {
+                UpValue::Filled(index, true) => {
+                    self.emit_byte(1);
+                    self.emit_byte(*index);
+                },
+                UpValue::Filled(index, false) => {
+                    self.emit_byte(0);
+                    self.emit_byte(*index);
+                },
+                _ => ()
+            }            
+        });
+    }
+
+ 
+    fn recursive_resolve_up_value(&mut self, name: Token, context_index: usize, scope_depth: usize) -> i32 {
+        /*
+            let's say we have this:
+            ```
+                fun outer_1() {
+                    let x = "outer_1";
+                    fun inner_1() {
+                        let y = "inner_1";
+                        fun inner_2() {
+                            print x;
+                            print y;
+                        }
+                    }
+                }
+            ```
+
+            in this case when we are in inner_2, our context index is 4 (including index of main function)
+            so this logic will first try to find x in using locals from context index 3 which is inner_1 function.
+            it will search in those locals but it doesn't exist so recursively it will call for index 3.
+            then same logic will be applied and it will search x in index 2 which is our outer_1 function. x exists there
+            so we will get a valid index. Then index 3 call will add a upvalue in its compiler context 
+            and return index. which will be received by first call using context index 4 and it will also add 
+            add local value using false.        
+        */
+        if context_index == 0 {
+            return -1;
+        }
+
+        let context_opt = self.contexts.get(context_index - 1);
+        match context_opt {
+            Some(context) => {
+                let locals = context.locals.clone();
+                if let Some(index) = self.resolve_from_locals(locals, scope_depth - 1, name) {
+                    self.add_up_value(index as u8, true, context_index);
+                    return index;
+                } else {
+                    let r_index = self.recursive_resolve_up_value(name, context_index - 1, scope_depth - 1);
+                    self.add_up_value(r_index as u8, false, context_index);
+                    r_index
+                }
+            },
+            None => -1            
+        }        
+    }       
+        
+    fn add_up_value(&mut self, index: u8, is_local: bool, context_index: usize) {
+        let up_value = UpValue::Filled(index, is_local);
+        let up_value_count = self.contexts[context_index].up_value_count;
+        self.contexts[context_index].up_values[up_value_count] = up_value;
+        self.contexts[context_index].up_value_count += 1;
     }
 
     fn parse_and_define_parameter(&mut self) {
@@ -369,6 +451,13 @@ impl<'c> Compiler<'c> {
         let scope_depth = self.scope_depth;
         let locals = self.current_context().locals.clone();
 
+        if let Some(value) = self.resolve_from_locals(locals, scope_depth, token) {
+            return value;
+        }
+        -1
+    }
+
+    fn resolve_from_locals(&mut self, locals: Vec<Local>, scope_depth: usize, token: Token) -> Option<i32> {
         for (idx, existing) in locals.iter().enumerate().rev() {
             match existing {
                 Local::Filled(existing_token, depth) => {
@@ -380,14 +469,14 @@ impl<'c> Compiler<'c> {
                         let existing_name = self.token_name(existing_token_deref);
                         let local_name = self.token_name(token);
                         if local_name == existing_name {
-                            return idx as i32
+                            return Some(idx as i32)
                         }
                     }
                 }
                 _ => continue,
             }
         }
-        -1
+        None
     }
 
     fn variable(&mut self, can_assign: bool) {
@@ -399,10 +488,16 @@ impl<'c> Compiler<'c> {
             set_op = OpCode::SetLocalVariable;
             get_op = OpCode::GetLocalVariable;
         } else {
-            let index = self.identifier();
-            existing_index = index as i32;
-            set_op = OpCode::SetGlobalVariable;
-            get_op = OpCode::GetGlobalVariable;
+            existing_index = self.recursive_resolve_up_value(token, self.current_context, self.scope_depth);
+            if existing_index != -1 {
+                set_op = OpCode::SetUpValue;
+                get_op = OpCode::GetUpValue;
+            } else {
+                let index = self.identifier();
+                existing_index = index as i32;
+                set_op = OpCode::SetGlobalVariable;
+                get_op = OpCode::GetGlobalVariable;
+            }           
         }
         let prev_token = self.previous_token();
         if can_assign && self.match_token(TokenType::Equal) {
