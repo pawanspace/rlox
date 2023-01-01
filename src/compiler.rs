@@ -390,12 +390,6 @@ impl<'c> Compiler<'c> {
         -1
     }
 
-    fn fun_name(&mut self, existing_token: &Token, token: Token) -> bool {
-        let existing_name = self.token_name(existing_token.clone());
-        let local_name = self.token_name(token);
-        local_name == existing_name        
-    }
-
     fn variable(&mut self, can_assign: bool) {
         let token = self.parser.previous.unwrap();
         let mut existing_index = self.resolve_local(token);
