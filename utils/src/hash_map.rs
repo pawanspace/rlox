@@ -1,4 +1,3 @@
-use std::borrow::BorrowMut;
 use crate::common::FatPointer;
 use crate::memory;
 use std::fmt::Debug;
@@ -48,14 +47,6 @@ where
 
     pub(crate) fn get(&self, key: FatPointer) -> Option<&T> {
         self.find_entry(&key)
-    }
-
-    pub(crate) fn get_mut(&mut self, key: FatPointer) -> Option<&mut T> {
-        let entry = self.find_entry_mut(&key).unwrap();
-        match entry {
-            Entry::Occupied(value, data) => Some(data),
-            _ => None
-        }
     }
 
     pub(crate) fn delete(&mut self, key: FatPointer) -> Option<T> {
@@ -158,21 +149,6 @@ where
         }
     }
 
-
-    fn find_entry_mut(&mut self, key: &FatPointer) -> Option<&mut Entry<T>> {
-        let mut bucket = key.hash % (self.capacity as u32);
-        loop {
-            let entry = self.entries.get_mut(bucket as usize);
-            return match entry {
-                Some(entry)  => {
-                    Some(entry)
-                },
-                None => None
-            }
-        }
-    }
-
-
     fn is_occupied(&self, bucket: u32, key: &FatPointer, entries: &Vec<Entry<T>>) -> bool {
         match &entries[bucket as usize] {
             Entry::Occupied(existing, _) => {
@@ -186,11 +162,6 @@ where
             Entry::Vacant | Entry::TombStone => false,
         }
     }
-}
-
-#[derive(Debug, Clone)]
-struct TestValue {
-    id: u32
 }
 
 #[cfg(test)]
@@ -280,19 +251,4 @@ mod tests {
         map.insert(two.clone(), true);
         assert_eq!(map.capacity, 7);
     }
-
-
-    #[test]
-    fn can_handle_reference() {
-        let mut map = Table::init(1);
-        let value = TestValue { id: 1 };
-        let one = create_fat_ptr(&mut "one");
-        {
-            map.insert(one.clone(), value);
-            let existing = map.get_mut(one.clone());
-            existing.unwrap().id = 2;
-        }
-        assert!(map.get_mut(one.clone()).unwrap().id.eq(&2), "Expected value to update based on reference.");
-    }
-
 }
