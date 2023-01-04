@@ -1,5 +1,6 @@
 use num_derive::FromPrimitive;
 use std::cmp::Ordering;
+use crate::token::{TokenType, Token};
 
 #[derive(Debug, Clone)]
 pub(crate) struct Scanner {
@@ -31,6 +32,10 @@ impl Scanner {
         self.start = start
     }
 
+    fn is_alpha(c: char) -> bool {
+        c.is_alphabetic() || c == '_'
+    }
+
     pub(crate) fn scan_token(&mut self) -> Token {
         self.skip_whitespace();
         self.start = self.current;
@@ -50,7 +55,7 @@ impl Scanner {
 
         // -1 because we want to look at the consumed char
         // look for identifier token that starts with alphabetic
-        if is_alpha(self.chars[self.start]) {
+        if Self::is_alpha(self.chars[self.start]) {
             self.identifier();
             let token_type = self.identifier_type();
             return self.make_token(token_type);
@@ -139,7 +144,7 @@ impl Scanner {
     }
 
     fn identifier(&mut self) {
-        while self.peek().is_digit(10) || is_alpha(self.peek()) {
+        while self.peek().is_digit(10) || Self::is_alpha(self.peek()) {
             self.advance();
         }
     }

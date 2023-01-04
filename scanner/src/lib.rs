@@ -1,6 +1,6 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+#[macro_use]
+mod scanner;
+mod token;
 
 #[cfg(test)]
 mod tests {
