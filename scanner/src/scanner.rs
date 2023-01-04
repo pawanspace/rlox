@@ -1,4 +1,3 @@
-use num_derive::FromPrimitive;
 use std::cmp::Ordering;
 use crate::token::{TokenType, Token};
 
@@ -21,6 +20,19 @@ impl Scanner {
             total_size,
             chars: source,
         }
+    }
+
+    pub fn scan(&mut self) -> Vec<Token>{
+        let mut tokens = vec![];
+        loop {
+            let token = self.scan_token();
+            if token.token_type == TokenType::Error || token.token_type == TokenType::Eof {
+                tokens.push(token);
+                break;
+            }
+            tokens.push(token);
+        }
+        tokens
     }
 
     pub(crate) fn refresh(&mut self, start: usize, total_size: usize, mut source: Vec<char>) {
