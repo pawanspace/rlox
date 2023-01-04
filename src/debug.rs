@@ -13,7 +13,7 @@ pub fn debug(message: String, new_line: bool) {
     }
 }
 
-pub fn info(message: String) {    
+pub fn info(message: String) {
     if INFO {
         println!("[INFO] {:?}", message);
     }

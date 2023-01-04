@@ -159,12 +159,12 @@ pub(crate) enum UpValue {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct CompilerContext {    
+pub(crate) struct CompilerContext {
     function: Obj,
     locals: Vec<Local>,
-    local_count: usize, 
+    local_count: usize,
     up_values: Vec<UpValue>,
-    up_value_count: usize,   
+    up_value_count: usize,
 }
 
 impl CompilerContext {
@@ -177,14 +177,13 @@ impl CompilerContext {
 
         CompilerContext {
             locals,
-            local_count: 1, // starting with 1 take first spot for top level function            
+            local_count: 1, // starting with 1 take first spot for top level function
             up_values,
             up_value_count: 0,
-            function: Obj::Fun(Function::new_function(FunctionType::Script))
+            function: Obj::Fun(Function::new_function(FunctionType::Script)),
         }
     }
 }
-
 
 pub(crate) struct Compiler<'c> {
     table: &'c mut Table<Value>,
@@ -193,7 +192,7 @@ pub(crate) struct Compiler<'c> {
     source: String,
     current_context: usize,
     scope_depth: usize,
-    contexts: Vec<CompilerContext>
+    contexts: Vec<CompilerContext>,
 }
 
 impl<'c> Compiler<'c> {
@@ -205,17 +204,17 @@ impl<'c> Compiler<'c> {
             panic_mode: false,
         };
 
-        let mut contexts: Vec<CompilerContext>= vec![];
+        let mut contexts: Vec<CompilerContext> = vec![];
         contexts.push(CompilerContext::init());
 
         let compiler = Compiler {
             scanner,
             parser,
             source: "".to_string(),
-            table,            
+            table,
             contexts,
             scope_depth: 0,
-            current_context: 0
+            current_context: 0,
         };
 
         compiler
@@ -230,7 +229,10 @@ impl<'c> Compiler<'c> {
             self.declaration();
         }
         self.end_compiler();
-        (self.parser.had_error, self.current_context().function.clone())
+        (
+            self.parser.had_error,
+            self.current_context().function.clone(),
+        )
     }
 
     fn advance(&mut self) {
@@ -268,7 +270,6 @@ impl<'c> Compiler<'c> {
         self.current_chunk().write_index(index, prev_token.line);
     }
 
-
     fn function(&mut self) {
         let mut context = CompilerContext::init();
         let mut function = Function::new_function(FunctionType::Closure);
@@ -280,7 +281,7 @@ impl<'c> Compiler<'c> {
         let function_obj = Obj::Fun(function);
         context.function = function_obj;
         self.contexts.push(context);
-        self.current_context += 1; 
+        self.current_context += 1;
         self.begin_scope();
         self.consume(TokenType::LeftParen, "Expect '(' after function name");
         let mut arity = 0;
@@ -318,34 +319,38 @@ impl<'c> Compiler<'c> {
         self.consume(
             TokenType::LeftBrace,
             "Expect '{' at the beginning  of function body",
-        );        
-        self.block();        
+        );
+        self.block();
         self.end_scope();
-        self.end_compiler();        
+        self.end_compiler();
         let inner_function = self.contexts[self.current_context + 1].function.clone();
         let up_values = self.contexts[self.current_context + 1].up_values.clone();
         self.contexts.remove(self.current_context + 1);
-        // reset old compiler state        
-        let constant_index = self.current_chunk().add_constant(Value::from(inner_function));        
-        self.emit_opcode(OpCode::Closure);        
-        self.emit_byte(constant_index as u8);        
-        up_values.iter().for_each(|up_value| { 
-            match up_value {
-                UpValue::Filled(index, true) => {
-                    self.emit_byte(1);
-                    self.emit_byte(*index);
-                },
-                UpValue::Filled(index, false) => {
-                    self.emit_byte(0);
-                    self.emit_byte(*index);
-                },
-                _ => ()
-            }            
+        // reset old compiler state
+        let constant_index = self
+            .current_chunk()
+            .add_constant(Value::from(inner_function));
+        self.emit_opcode(OpCode::Closure);
+        self.emit_byte(constant_index as u8);
+        up_values.iter().for_each(|up_value| match up_value {
+            UpValue::Filled(index, true) => {
+                self.emit_byte(1);
+                self.emit_byte(*index);
+            }
+            UpValue::Filled(index, false) => {
+                self.emit_byte(0);
+                self.emit_byte(*index);
+            }
+            _ => (),
         });
     }
 
- 
-    fn recursive_resolve_up_value(&mut self, name: Token, context_index: usize, scope_depth: usize) -> i32 {
+    fn recursive_resolve_up_value(
+        &mut self,
+        name: Token,
+        context_index: usize,
+        scope_depth: usize,
+    ) -> i32 {
         /*
             let's say we have this:
             ```
@@ -365,9 +370,9 @@ impl<'c> Compiler<'c> {
             so this logic will first try to find x in using locals from context index 3 which is inner_1 function.
             it will search in those locals but it doesn't exist so recursively it will call for index 3.
             then same logic will be applied and it will search x in index 2 which is our outer_1 function. x exists there
-            so we will get a valid index. Then index 3 call will add a upvalue in its compiler context 
-            and return index. which will be received by first call using context index 4 and it will also add 
-            add local value using false.        
+            so we will get a valid index. Then index 3 call will add a upvalue in its compiler context
+            and return index. which will be received by first call using context index 4 and it will also add
+            add local value using false.
         */
         if context_index == 0 {
             return -1;
@@ -381,15 +386,16 @@ impl<'c> Compiler<'c> {
                     self.add_up_value(index as u8, true, context_index);
                     return index;
                 } else {
-                    let r_index = self.recursive_resolve_up_value(name, context_index - 1, scope_depth - 1);
+                    let r_index =
+                        self.recursive_resolve_up_value(name, context_index - 1, scope_depth - 1);
                     self.add_up_value(r_index as u8, false, context_index);
                     r_index
                 }
-            },
-            None => -1            
-        }        
-    }       
-        
+            }
+            None => -1,
+        }
+    }
+
     fn add_up_value(&mut self, index: u8, is_local: bool, context_index: usize) {
         let up_value = UpValue::Filled(index, is_local);
         let up_value_count = self.contexts[context_index].up_value_count;
@@ -457,7 +463,12 @@ impl<'c> Compiler<'c> {
         -1
     }
 
-    fn resolve_from_locals(&mut self, locals: Vec<Local>, scope_depth: usize, token: Token) -> Option<i32> {
+    fn resolve_from_locals(
+        &mut self,
+        locals: Vec<Local>,
+        scope_depth: usize,
+        token: Token,
+    ) -> Option<i32> {
         for (idx, existing) in locals.iter().enumerate().rev() {
             match existing {
                 Local::Filled(existing_token, depth) => {
@@ -469,7 +480,7 @@ impl<'c> Compiler<'c> {
                         let existing_name = self.token_name(existing_token_deref);
                         let local_name = self.token_name(token);
                         if local_name == existing_name {
-                            return Some(idx as i32)
+                            return Some(idx as i32);
                         }
                     }
                 }
@@ -488,7 +499,8 @@ impl<'c> Compiler<'c> {
             set_op = OpCode::SetLocalVariable;
             get_op = OpCode::GetLocalVariable;
         } else {
-            existing_index = self.recursive_resolve_up_value(token, self.current_context, self.scope_depth);
+            existing_index =
+                self.recursive_resolve_up_value(token, self.current_context, self.scope_depth);
             if existing_index != -1 {
                 set_op = OpCode::SetUpValue;
                 get_op = OpCode::GetUpValue;
@@ -497,7 +509,7 @@ impl<'c> Compiler<'c> {
                 existing_index = index as i32;
                 set_op = OpCode::SetGlobalVariable;
                 get_op = OpCode::GetGlobalVariable;
-            }           
+            }
         }
         let prev_token = self.previous_token();
         if can_assign && self.match_token(TokenType::Equal) {
@@ -546,7 +558,7 @@ impl<'c> Compiler<'c> {
             self.end_scope();
         } else {
             self.expression_statement();
-        }        
+        }
     }
 
     fn return_stmt(&mut self) {
@@ -705,8 +717,10 @@ impl<'c> Compiler<'c> {
 
     fn end_scope(&mut self) {
         self.scope_depth -= 1;
-        let scoped_locals = self.current_context()
-            .locals.clone()
+        let scoped_locals = self
+            .current_context()
+            .locals
+            .clone()
             .iter()
             .filter(|local| match local {
                 Local::Filled(_, depth) => depth.gt(&self.scope_depth),
@@ -835,9 +849,9 @@ impl<'c> Compiler<'c> {
     fn end_compiler(&mut self) {
         self.emit_return();
         // do it only for inner functions
-        if self.current_context > 0 {        
-            self.current_context -= 1;   
-        }     
+        if self.current_context > 0 {
+            self.current_context -= 1;
+        }
     }
 
     fn emit_return(&mut self) {
@@ -911,9 +925,7 @@ impl<'c> Compiler<'c> {
                 let existing_ptr = existing.to_owned();
                 self.reuse_existing_string(existing_ptr, emit_constant)
             }
-            None => {
-                self.create_new_string(str_value, hash_value, emit_constant)
-            }
+            None => self.create_new_string(str_value, hash_value, emit_constant),
         }
     }
 
@@ -927,7 +939,12 @@ impl<'c> Compiler<'c> {
         }
     }
 
-    fn create_new_string(&mut self, mut str_value: String, hash_value: u32, emit_constant: bool) -> usize {
+    fn create_new_string(
+        &mut self,
+        mut str_value: String,
+        hash_value: u32,
+        emit_constant: bool,
+    ) -> usize {
         let str_ptr = memory::allocate::<String>();
         let src = str_value.as_mut_ptr();
         memory::copy(src, str_ptr, str_value.len(), 0);
@@ -946,7 +963,7 @@ impl<'c> Compiler<'c> {
         }
     }
 
-    fn get_existing_string(&mut self, str_value: &str, hash_value: u32) ->  Option<&FatPointer> {        
+    fn get_existing_string(&mut self, str_value: &str, hash_value: u32) -> Option<&FatPointer> {
         let exiting_value = self.table.find_entry_with_value(str_value, hash_value);
         exiting_value
     }

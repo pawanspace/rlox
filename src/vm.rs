@@ -1,13 +1,13 @@
 extern crate num;
 
-use colored::{Color, Colorize};
-use crate::common::{FatPointer, Function, Obj, OpCode, Value, random_color};
+use crate::common::{random_color, FatPointer, Function, Obj, OpCode, Value};
 use crate::debug;
 use crate::hash_map::Table;
 use crate::hasher::hash;
 use crate::metrics;
 use crate::scanner::Scanner;
 use crate::{compiler, memory};
+use colored::{Color, Colorize};
 
 const STACK_MAX: usize = 512;
 
@@ -29,8 +29,6 @@ pub(crate) struct CallFrame {
     cf_stack_top: usize,
     color: Color,
 }
-
-
 
 impl CallFrame {
     fn print_name(&self) {
@@ -62,7 +60,7 @@ pub enum InterpretResult {
 
 macro_rules! READ_BYTE {
     ($self:ident, $frame:ident) => {
-        *{            
+        *{
             let c = $frame.function.chunk.code.get($frame.ip as usize).clone();
             $frame.ip += 1;
             c.unwrap()
@@ -73,7 +71,7 @@ macro_rules! READ_BYTE {
 macro_rules! READ_CONSTANT {
     ($self:ident, $frame:ident) => {{
         let index = READ_BYTE!($self, $frame) as usize;
-        debug::info(format!("Reading constant from index: {:?}", index));        
+        debug::info(format!("Reading constant from index: {:?}", index));
         $frame.function.chunk.constants.values.get(index)
     }};
 }
@@ -250,7 +248,10 @@ impl VM {
                 }
                 Some(OpCode::DefineGlobalVariable) => {
                     let constant = READ_CONSTANT!(self, current_frame).unwrap().clone();
-                    debug::info(format!("DefineGlobalVariable: Read constant value: {:?}", constant));
+                    debug::info(format!(
+                        "DefineGlobalVariable: Read constant value: {:?}",
+                        constant
+                    ));
                     let variable_name = Into::<FatPointer>::into(constant);
                     let value = self.peek(0);
                     self.globals.insert(variable_name, value);
@@ -304,7 +305,10 @@ impl VM {
                 }
                 Some(OpCode::GetGlobalVariable) => {
                     let constant = READ_CONSTANT!(self, current_frame).unwrap().clone();
-                    debug::info(format!("GetGlobalVariable: Read constant value: {:?}", constant));
+                    debug::info(format!(
+                        "GetGlobalVariable: Read constant value: {:?}",
+                        constant
+                    ));
                     let variable_name = Into::<FatPointer>::into(constant);
                     if let Some(ret) = self.push_obj_value_to_stack(variable_name) {
                         return ret;
@@ -363,7 +367,10 @@ impl VM {
                 Some(Value::Obj(obj)) => match obj {
                     Obj::Str(ptr) => {
                         let c_value = memory::read_string(ptr.ptr, ptr.size);
-                        debug::info(format!("String Object value pushing to stack {:?}", c_value));
+                        debug::info(format!(
+                            "String Object value pushing to stack {:?}",
+                            c_value
+                        ));
                         self.push(val.clone());
                     }
                     Obj::Fun(function) => {
@@ -529,7 +536,7 @@ impl VM {
     fn concat(&mut self) -> Value {
         let second = Into::<FatPointer>::into(self.pop());
         let first = Into::<FatPointer>::into(self.pop());
-            
+
         let ptr = memory::allocate::<String>();
         memory::copy(first.ptr, ptr, first.size, 0);
         memory::copy(second.ptr, ptr, second.size, first.size);
@@ -541,7 +548,6 @@ impl VM {
             hash: hash_value,
         }))
     }
-
 
     pub(crate) fn interpret<'m>(&mut self, source: String) -> InterpretResult {
         let chars: Vec<char> = source.chars().collect();

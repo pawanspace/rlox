@@ -1,7 +1,7 @@
-use num_derive::FromPrimitive;
-use std::fmt::Debug;
 use colored::Color;
+use num_derive::FromPrimitive;
 use rand::prelude::*;
+use std::fmt::Debug;
 
 use crate::{chunk::Chunk, hasher, memory};
 
@@ -144,7 +144,6 @@ impl Into<Obj> for Value {
     }
 }
 
-
 impl Into<FatPointer> for Value {
     fn into(self) -> FatPointer {
         match self {
@@ -155,7 +154,6 @@ impl Into<FatPointer> for Value {
         }
     }
 }
-
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct FatPointer {
@@ -187,13 +185,13 @@ impl Function {
 pub(crate) enum FunctionType {
     Function,
     Script,
-    Closure
+    Closure,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) enum Obj {
     Str(FatPointer),
-    Fun(Function),    
+    Fun(Function),
     Closure(Box<Obj>),
     Nil,
 }
@@ -276,7 +274,6 @@ impl Into<Function> for Obj {
         }
     }
 }
-
 
 pub(crate) fn random_color() -> Color {
     let r: u8 = rand::thread_rng().gen_range(1..=255);

@@ -1,6 +1,6 @@
-use std::borrow::BorrowMut;
 use crate::common::FatPointer;
 use crate::memory;
+use std::borrow::BorrowMut;
 use std::fmt::Debug;
 #[derive(Debug, Clone)]
 pub(crate) enum Entry<T> {
@@ -50,7 +50,7 @@ where
         let entry = self.find_entry(&key).unwrap();
         match entry {
             Entry::Occupied(value, data) => Some(data),
-            _ => None
+            _ => None,
         }
     }
 
@@ -58,7 +58,7 @@ where
         let entry = self.find_entry_mut(&key).unwrap();
         match entry {
             Entry::Occupied(value, data) => Some(data),
-            _ => None
+            _ => None,
         }
     }
 
@@ -143,23 +143,17 @@ where
     fn find_entry(&self, key: &FatPointer) -> Option<&Entry<T>> {
         let index = self.find_entry_index(key);
         return match index {
-            Some(index)  => {
-                self.entries.get(index)
-            },
-            None => None
-        }
+            Some(index) => self.entries.get(index),
+            None => None,
+        };
     }
-
 
     fn find_entry_mut(&mut self, key: &FatPointer) -> Option<&mut Entry<T>> {
         let index = self.find_entry_index(key);
-            return match index {
-                Some(index)  => {
-                    self.entries.get_mut(index)
-                },
-                None => None
-            }
-
+        return match index {
+            Some(index) => self.entries.get_mut(index),
+            None => None,
+        };
     }
 
     fn find_entry_index(&self, key: &FatPointer) -> Option<usize> {
@@ -167,21 +161,18 @@ where
         loop {
             let entry = self.entries.get(bucket as usize);
             return match entry {
-                Some(entry)  => {
-                    match entry {
-                        Entry::Occupied(value, data) => Some(bucket as usize),
-                        Entry::Vacant => None,
-                        Entry::TombStone => {
-                            bucket = (bucket + 1) % (self.capacity as u32);
-                            continue;
-                        }
+                Some(entry) => match entry {
+                    Entry::Occupied(value, data) => Some(bucket as usize),
+                    Entry::Vacant => None,
+                    Entry::TombStone => {
+                        bucket = (bucket + 1) % (self.capacity as u32);
+                        continue;
                     }
                 },
-                None => None
-            }
+                None => None,
+            };
         }
     }
-
 
     fn is_occupied(&self, bucket: u32, key: &FatPointer, entries: &Vec<Entry<T>>) -> bool {
         match &entries[bucket as usize] {
@@ -200,7 +191,7 @@ where
 
 #[derive(Debug, Clone)]
 struct TestValue {
-    id: u32
+    id: u32,
 }
 
 #[cfg(test)]
@@ -291,7 +282,6 @@ mod tests {
         assert_eq!(map.capacity, 7);
     }
 
-
     #[test]
     fn can_handle_reference() {
         let mut map = Table::init(1);
@@ -302,7 +292,9 @@ mod tests {
             let existing = map.get_mut(one.clone());
             existing.unwrap().id = 2;
         }
-        assert!(map.get_mut(one.clone()).unwrap().id.eq(&2), "Expected value to update based on reference.");
+        assert!(
+            map.get_mut(one.clone()).unwrap().id.eq(&2),
+            "Expected value to update based on reference."
+        );
     }
-
 }

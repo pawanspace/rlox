@@ -1,7 +1,7 @@
+use crate::common::random_color;
+use colored::Colorize;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use colored::{Colorize};
-use crate::common::{random_color};
 static mut EVENTS: Option<HashMap<String, Duration>> = None;
 
 fn init_events() {
@@ -27,8 +27,10 @@ pub(crate) fn display() {
     println!("\n\n\n");
     unsafe {
         EVENTS.as_ref().unwrap().iter().for_each(|(key, value)| {
-            println!("{}", format!("***** {:?}: {:?} *****", key, value)
-                .color(random_color()));
+            println!(
+                "{}",
+                format!("***** {:?}: {:?} *****", key, value).color(random_color())
+            );
         });
     }
 }
