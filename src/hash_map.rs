@@ -47,7 +47,11 @@ where
     }
 
     pub(crate) fn get(&self, key: FatPointer) -> Option<&T> {
-        self.find_entry(&key)
+        let entry = self.find_entry(&key).unwrap();
+        match entry {
+            Entry::Occupied(value, data) => Some(data),
+            _ => None
+        }
     }
 
     pub(crate) fn get_mut(&mut self, key: FatPointer) -> Option<&mut T> {
@@ -136,36 +140,42 @@ where
         }
     }
 
-    fn find_entry(&self, key: &FatPointer) -> Option<&T> {
-        let mut bucket = key.hash % (self.capacity as u32);
-        loop {
-            return match &self.entries[bucket as usize] {
-                Entry::Occupied(existing, value) => {
-                    // if key is same we will use the same index
-                    if memory::eq(existing.ptr, key.ptr) {
-                        Some(&value)
-                    } else {
-                        bucket = (bucket + 1) % (self.capacity as u32);
-                        continue;
-                    }
-                }
-                Entry::Vacant => None,
-                Entry::TombStone => {
-                    bucket = (bucket + 1) % (self.capacity as u32);
-                    continue;
-                }
-            };
+    fn find_entry(&self, key: &FatPointer) -> Option<&Entry<T>> {
+        let index = self.find_entry_index(key);
+        return match index {
+            Some(index)  => {
+                self.entries.get(index)
+            },
+            None => None
         }
     }
 
 
     fn find_entry_mut(&mut self, key: &FatPointer) -> Option<&mut Entry<T>> {
+        let index = self.find_entry_index(key);
+            return match index {
+                Some(index)  => {
+                    self.entries.get_mut(index)
+                },
+                None => None
+            }
+
+    }
+
+    fn find_entry_index(&self, key: &FatPointer) -> Option<usize> {
         let mut bucket = key.hash % (self.capacity as u32);
         loop {
-            let entry = self.entries.get_mut(bucket as usize);
+            let entry = self.entries.get(bucket as usize);
             return match entry {
                 Some(entry)  => {
-                    Some(entry)
+                    match entry {
+                        Entry::Occupied(value, data) => Some(bucket as usize),
+                        Entry::Vacant => None,
+                        Entry::TombStone => {
+                            bucket = (bucket + 1) % (self.capacity as u32);
+                            continue;
+                        }
+                    }
                 },
                 None => None
             }
