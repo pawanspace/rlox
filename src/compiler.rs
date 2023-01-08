@@ -183,6 +183,12 @@ impl CompilerContext {
             function: Obj::Fun(Function::new_function(FunctionType::Script)),
         }
     }
+
+    fn update_function_arity(&mut self, arity: u8) {
+        if let Obj::Fun(function) = &mut self.function {
+            function.arity = arity;
+        }
+    }
 }
 
 pub(crate) struct Compiler<'c> {
@@ -304,14 +310,7 @@ impl<'c> Compiler<'c> {
             self.error_at_current("Can't have more than 255 parameters.");
         }
 
-        match self.current_context().function.clone() {
-            Obj::Fun(mut function) => {
-                function.arity = arity;
-                self.current_context().function = Obj::Fun(function);
-            }
-            _ => (),
-        };
-
+        self.current_context().update_function_arity(arity);
         self.consume(
             TokenType::RightParen,
             "Expect ')' at the end of function params",
