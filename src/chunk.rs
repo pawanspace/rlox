@@ -143,6 +143,6 @@ impl<'a> Chunk {
         debug::info(format!("constant index: {}", constant_index));
         //TODO: I am not sure if converting u8 to size here is fine or not
         let value = self.constants.get(constant_index as usize);
-        debug::print_value(value, true);
+        debug::print_value(&value, true);
     }
 }

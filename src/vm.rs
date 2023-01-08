@@ -32,7 +32,7 @@ pub(crate) struct CallFrame {
 
 impl CallFrame {
     fn print_name(&self) {
-        match self.function.name.clone() {
+        match &self.function.name {
             Some(ptr) => {
                 let cf_name = memory::read_string(ptr.ptr, ptr.size);
                 println!(
@@ -61,7 +61,7 @@ pub enum InterpretResult {
 macro_rules! READ_BYTE {
     ($self:ident, $frame:ident) => {
         *{
-            let c = $frame.function.chunk.code.get($frame.ip as usize).clone();
+            let c = $frame.function.chunk.code.get($frame.ip as usize);
             $frame.ip += 1;
             c.unwrap()
         }
@@ -78,15 +78,16 @@ macro_rules! READ_CONSTANT {
 
 macro_rules! BINARY_OP {
     ($self:ident, $op:tt) => {{
-        let peek_0 = $self.peek(0);
-        let peek_1 = $self.peek(1);
+        let peek_0 = $self.peek(0).as_ref().unwrap();
+        let peek_1 = $self.peek(1).as_ref().unwrap();
         if !peek_0.is_number() || !peek_1.is_number() {
             $self.runtime_error("Expected two numbers for binary operation.");
             return InterpretResult::InterpretRuntimeError;
         }
-        let right_val = $self.pop();
-        let left_val = $self.pop();
-        $self.push(Value::from(Into::<f64>::into(left_val.clone()) $op Into::<f64>::into(right_val.clone())));
+        let (right_val_popped, left_val_popped)  = $self.pop_pair();              
+        let left_float_val = Into::<f64>::into(left_val_popped.as_ref().unwrap());
+        let right_float_val = Into::<f64>::into(right_val_popped.as_ref().unwrap());
+        $self.push(Value::from(left_float_val $op right_float_val));
     }}
 }
 
@@ -138,17 +139,20 @@ impl VM {
         self.stack_top += 1;
     }
 
-    fn pop(&mut self) -> Value {
+    fn pop(&mut self) -> &Option<Value> {
         self.stack_top -= 1;
-        self.stack[self.stack_top].as_ref().unwrap().clone()
+        self.stack.get(self.stack_top).unwrap()
     }
 
-    fn peek(&self, distance: usize) -> Value {
-        self.stack[self.stack_top - 1 - distance]
-            .as_ref()
-            .unwrap()
-            .clone()
+    fn pop_pair(&mut self) -> (&Option<Value>, &Option<Value>) {
+        self.stack_top -= 2;
+        (self.stack.get(self.stack_top + 1).unwrap(), self.stack.get(self.stack_top).unwrap())
     }
+
+    fn peek(&self, distance: usize) -> &Option<Value> {
+        self.stack.get(self.stack_top - 1 - distance).unwrap()            
+    }
+
 
     fn runtime_error(&self, message: &str) {
         debug::info(format!("Runtime error: {:?}", message));
@@ -176,20 +180,21 @@ impl VM {
                         .clone();
                 }
                 Some(OpCode::Negate) => {
-                    let value = self.peek(0);
+                    let value = self.peek(0).as_ref().unwrap();
                     if !value.is_number() {
                         self.runtime_error("Expected number for Negate opcode!");
                         return InterpretResult::InterpretRuntimeError;
                     }
-                    let pop_val = self.pop();
-                    self.push(Value::from(-1.0 * Into::<f64>::into(pop_val)));
+                    let pop_val = self.pop().as_ref().unwrap();
+                    let float_val = Into::<f64>::into(pop_val);
+                    self.push(Value::from(-1.0 * float_val));
                 }
                 Some(OpCode::Add) => {
-                    let value = self.peek(0);
+                    let value = self.peek(0).as_ref().unwrap();
                     match value {
                         Value::Obj(obj) => {
                             if obj.is_string() {
-                                if self.peek(1).is_obj_string() {
+                                if self.peek(1).as_ref().unwrap().is_obj_string() {
                                     let combined = self.concat();
                                     self.push(combined);
                                 }
@@ -220,10 +225,10 @@ impl VM {
                 Some(OpCode::Less) => {
                     BINARY_OP!(self, <);
                 }
-                Some(OpCode::Equal) => {
-                    let left = self.pop();
-                    let right = self.pop();
-                    self.push(Value::from(self.is_equal(left, right)));
+                Some(OpCode::Equal) => {                    
+                    let (left, right) = self.pop_pair();
+                    let is_equal = left.as_ref().unwrap() == right.as_ref().unwrap();                
+                    self.push(Value::from(is_equal));
                 }
                 Some(OpCode::Constant) => {
                     let constant = READ_CONSTANT!(self, current_frame);
@@ -238,8 +243,8 @@ impl VM {
                 Some(OpCode::Nil) => {
                     self.push(Value::Missing);
                 }
-                Some(OpCode::Not) => {
-                    let value = self.pop();
+                Some(OpCode::Not) => {                   
+                    let value = self.pop().as_ref().unwrap().clone();                     
                     self.push(Value::from(self.is_falsey(value)));
                 }
                 Some(OpCode::ConstantLong) => {
@@ -252,9 +257,9 @@ impl VM {
                         "DefineGlobalVariable: Read constant value: {:?}",
                         constant
                     ));
-                    let variable_name = Into::<FatPointer>::into(constant);
-                    let value = self.peek(0);
-                    self.globals.insert(variable_name, value);
+                    let variable_name = Into::<FatPointer>::into(&constant);
+                    let value = self.peek(0).as_ref().unwrap();
+                    self.globals.insert(variable_name, value.clone());
                     self.pop();
                 }
                 Some(OpCode::Pop) => {
@@ -262,14 +267,14 @@ impl VM {
                 }
                 Some(OpCode::Closure) => {
                     let constant = READ_CONSTANT!(self, current_frame).unwrap().clone();
-                    let function_obj = Into::<Obj>::into(constant);
+                    let function_obj = Into::<Obj>::into(&constant);
                     let closure = Obj::Closure(Box::new(function_obj));
                     self.push(Value::from(closure));
                 }
                 Some(OpCode::Call) => {
                     let arg_count = READ_BYTE!(self, current_frame);
-                    let old_frame = current_frame.clone();
-                    if !self.execute_function(self.peek(arg_count as usize), arg_count) {
+                    let old_frame = current_frame.clone();                    
+                    if !self.execute_function(arg_count as usize, arg_count) {
                         return InterpretResult::InterpretRuntimeError;
                     }
                     current_frame = self.call_frames[self.frame_count - 1]
@@ -279,7 +284,7 @@ impl VM {
                     self.call_frames[self.frame_count - 2] = Some(old_frame);
                 }
                 Some(OpCode::JumpIfFalse) => {
-                    if self.is_falsey(self.peek(0)) {
+                    if self.is_falsey(self.peek(0).as_ref().unwrap().clone()) {
                         //current_frame.ip += offset as usize;
                         current_frame = self.update_offset(current_frame, true);
                     } else {
@@ -301,7 +306,7 @@ impl VM {
                 }
                 Some(OpCode::SetLocalVariable) => {
                     let b = READ_BYTE!(self, current_frame);
-                    self.stack[current_frame.cf_stack_top + b as usize] = Some(self.peek(0));
+                    self.stack[current_frame.cf_stack_top + b as usize] = Some(self.peek(0).as_ref().unwrap().clone());
                 }
                 Some(OpCode::GetGlobalVariable) => {
                     let constant = READ_CONSTANT!(self, current_frame).unwrap().clone();
@@ -309,20 +314,20 @@ impl VM {
                         "GetGlobalVariable: Read constant value: {:?}",
                         constant
                     ));
-                    let variable_name = Into::<FatPointer>::into(constant);
+                    let variable_name = Into::<FatPointer>::into(&constant);
                     if let Some(ret) = self.push_obj_value_to_stack(variable_name) {
                         return ret;
                     }
                 }
                 Some(OpCode::SetGlobalVariable) => {
                     let constant = READ_CONSTANT!(self, current_frame).unwrap().clone();
-                    let variable_name = Into::<FatPointer>::into(constant);
+                    let variable_name = Into::<FatPointer>::into(&constant);
                     if let Some(ret) = self.set_global_variable(variable_name) {
                         return ret;
                     }
                 }
                 Some(OpCode::Print) => {
-                    debug::print_value(self.pop(), true);
+                    debug::print_value(self.pop().as_ref().unwrap(), true);
                 }
                 _ => {
                     debug::info(format!("Stopping vm: {:?}", opcode));
@@ -338,7 +343,7 @@ impl VM {
         let ptr = variable_name.ptr;
         let value = self.peek(0);
 
-        if !self.globals.insert(variable_name.clone(), value) {
+        if !self.globals.insert(variable_name.clone(), value.as_ref().unwrap().clone()) {
             self.globals.delete(variable_name.clone());
             let key = memory::read_string(ptr, size);
             let message = format!("Unable to find value for key {:?}", key);
@@ -426,7 +431,7 @@ impl VM {
     }
 
     fn return_op(&mut self, current_frame: &mut CallFrame) -> bool {
-        let result = self.pop();
+        let result = self.pop().as_ref().unwrap().clone();
         self.frame_count -= 1;
 
         if self.frame_count == 0 {
@@ -441,9 +446,10 @@ impl VM {
         false
     }
 
-    fn execute_function(&mut self, callee: Value, arg_count: u8) -> bool {
-        if callee.is_obj() {
-            let obj = Into::<Obj>::into(callee);
+    fn execute_function(&mut self, distance: usize, arg_count: u8) -> bool {
+        let callee = self.peek(distance);
+        if callee.as_ref().unwrap().is_obj() {
+            let obj = Into::<Obj>::into(callee.as_ref().unwrap());
             match obj {
                 Obj::Fun(function) => {
                     if function.arity != arg_count {
@@ -528,14 +534,16 @@ impl VM {
         left == right
     }
 
-    // we are treating nil as false
+    // we are treating nil as false    
     fn is_falsey(&self, value: Value) -> bool {
-        value.is_missing() || (value.is_boolean() && !Into::<bool>::into(value))
+        value.is_missing() || (value.is_boolean() && !Into::<bool>::into(&value))
     }
 
     fn concat(&mut self) -> Value {
-        let second = Into::<FatPointer>::into(self.pop());
-        let first = Into::<FatPointer>::into(self.pop());
+        let(second_val, first_val) = self.pop_pair();
+
+        let second = Into::<FatPointer>::into(second_val.as_ref().unwrap());
+        let first = Into::<FatPointer>::into(first_val.as_ref().unwrap());
 
         let ptr = memory::allocate::<String>();
         memory::copy(first.ptr, ptr, first.size, 0);

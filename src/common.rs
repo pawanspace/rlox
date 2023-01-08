@@ -111,10 +111,10 @@ impl From<Obj> for Value {
     }
 }
 
-impl Into<bool> for Value {
+impl Into<bool> for &Value {
     fn into(self) -> bool {
         match self {
-            Value::Boolean(value) => value,
+            Value::Boolean(value) => *value,
             //@todo @pending check if it should be false this can be wrong in most cases
             // may be we should throw error
             _ => false,
@@ -122,10 +122,10 @@ impl Into<bool> for Value {
     }
 }
 
-impl Into<f64> for Value {
+impl Into<f64> for &Value {
     fn into(self) -> f64 {
         match self {
-            Value::Number(value) => value,
+            Value::Number(value) => *value,
             //@todo @pending check if it should be false this can be wrong in most cases
             // may be we should throw error
             _ => 0.0,
@@ -133,10 +133,10 @@ impl Into<f64> for Value {
     }
 }
 
-impl Into<Obj> for Value {
+impl Into<Obj> for &Value {
     fn into(self) -> Obj {
         match self {
-            Value::Obj(value) => value,
+            Value::Obj(value) => value.clone(),
             //@todo @pending check if it should be false this can be wrong in most cases
             // may be we should throw error
             _ => panic!("Unexpected error"),
@@ -144,10 +144,10 @@ impl Into<Obj> for Value {
     }
 }
 
-impl Into<FatPointer> for Value {
+impl Into<FatPointer> for &Value {
     fn into(self) -> FatPointer {
         match self {
-            Value::Obj(obj) => Into::<FatPointer>::into(obj),
+            Value::Obj(obj) => Into::<FatPointer>::into(obj.clone()),
             //@todo @pending check if it should be false this can be wrong in most cases
             // may be we should throw error
             _ => panic!("Unexpected error"),

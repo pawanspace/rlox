@@ -1,63 +1,45 @@
-// var a = true;
-// var i = 10;
-// if (a == true) { 
-//   print a;
-// }
-
-// while (i < 15) {
-//     print i;
-//     i = i + 1;
-// }
-// for (var i = 8; i < 10; i = i + 1) {
-//     print "index";
-// }
-
-// if (i == 10 and a == true) {
-//     print "first if";
-// }
-
-// if (i != 10 and a == true) {
-//     print "second if";
-// }
-
-// if (i == 10 or a == true) {
-//     print "third if";
-// }
-
-// fun add(a, b) {
-//     print a + b;
-// }
-
-// add(10, 20);
-
-// fun add_and_return(a, b) {
-//     return a + b;
-// }
-
-// var sum = add_and_return(23, 56);
-// print sum;
-
-
-// fun multiply_and_return(a, b, c) {
-//     return a * b * c;
-// }
-
-// print multiply_and_return(2, 2, 2);
-
-fun outer() {
-  var a = 1;
-  var b = 2;
-  fun middle() {
-    var c = 3;
-    var d = 4;
-    fun inner() {
-      print a + c + b + d;
-    }
-    return inner;
-  }
-  return middle;
+var a = true;
+var i = 10;
+if (a == true) { 
+  print a;
 }
 
-var middle = outer();
-var inner = middle();
-inner();
+while (i < 15) {
+    print i;
+    i = i + 1;
+}
+for (var i = 8; i < 10; i = i + 1) {
+    print "index";
+}
+
+if (i == 10 and a == true) {
+    print "first if";
+}
+
+if (i != 10 and a == true) {
+    print "second if";
+}
+
+if (i == 10 or a == true) {
+    print "third if";
+}
+
+fun add(a, b) {
+    print a + b;
+}
+
+add(10, 20);
+
+fun add_and_return(a, b) {
+    return a + b;
+}
+
+var sum = add_and_return(23, 56);
+print sum;
+
+
+fun multiply_and_return(a, b, c) {
+    return a * b * c;
+}
+
+print multiply_and_return(2, 2, 2);

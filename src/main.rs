@@ -72,7 +72,7 @@ fn main() {
     // } else {
     metrics::record("Total time".to_string(), || {
         run_file(PathBuf::from("first.lox"))
-    });
+    });    
     //       metrics::display();
     //}
 }

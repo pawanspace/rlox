@@ -19,7 +19,7 @@ pub fn info(message: String) {
     }
 }
 
-pub(crate) fn print_value(value: Value, new_line: bool) {
+pub(crate) fn print_value(value: &Value, new_line: bool) {
     match value {
         Value::Obj(obj) => match obj {
             Obj::Str(fat_ptr) => unsafe {
