@@ -24,22 +24,22 @@ if (i == 10 or a == true) {
     print "third if";
 }
 
-fun add(a, b) {
-    print a + b;
+fun add(x, y) {
+    print x + y;
 }
 
 add(10, 20);
 
-fun add_and_return(a, b) {
-    return a + b;
+fun multiply(x, y, z) {
+    return x * y * z;
 }
 
-var sum = add_and_return(23, 56);
-print sum;
+var mult = multiply;
+print mult(2, 2, 2);
 
 
 fun multiply_and_return(a, b, c) {
     return a * b * c;
 }
 
-print multiply_and_return(2, 2, 2);
+print multiply_and_return(2, 10, 2);

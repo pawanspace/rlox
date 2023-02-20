@@ -2,7 +2,7 @@ extern crate num;
 
 use crate::common::{random_color, FatPointer, Function, Obj, OpCode, Value};
 use crate::debug;
-use crate::hash_map::Table;
+use crate::hash_map::{Table, Entry};
 use crate::hasher::hash;
 use crate::metrics;
 use crate::scanner::Scanner;
@@ -177,7 +177,7 @@ impl VM {
                     current_frame = self.call_frames[self.frame_count - 1]
                         .as_ref()
                         .unwrap()
-                        .clone();
+                        .clone();                    
                 }
                 Some(OpCode::Negate) => {
                     let value = self.peek(0).as_ref().unwrap();
@@ -253,12 +253,12 @@ impl VM {
                 }
                 Some(OpCode::DefineGlobalVariable) => {
                     let constant = READ_CONSTANT!(self, current_frame).unwrap().clone();
-                    debug::info(format!(
-                        "DefineGlobalVariable: Read constant value: {:?}",
-                        constant
-                    ));
                     let variable_name = Into::<FatPointer>::into(&constant);
                     let value = self.peek(0).as_ref().unwrap();
+                    debug::info(format!(
+                        "DefineGlobalVariable: Define constant value: {:?}",
+                        value
+                    ));
                     self.globals.insert(variable_name, value.clone());
                     self.pop();
                 }
@@ -358,7 +358,10 @@ impl VM {
         let size = variable_name.size;
         let ptr = variable_name.ptr;
         let value = self.get_variable_value(variable_name);
-
+        debug::info(format!(
+            "Found global value: {:?}",
+            value
+        ));
         match value {
             Some(val) => match value {
                 Some(Value::Boolean(v)) => {
@@ -388,7 +391,7 @@ impl VM {
                         self.push(val.clone());
                     }
                     _ => {
-                        debug::info(format!("Unknown object pushing to stack"));
+                        debug::info(format!("Unknown object pushing to stack {:?}", obj));
                         self.push(val.clone());
                     }
                 },
@@ -481,6 +484,7 @@ impl VM {
                 _ => (),
             }
         }
+        println!("Expected function but instead got: {:?}", callee);
         self.runtime_error("Can only execute function");
         false
     }
@@ -504,8 +508,8 @@ impl VM {
             cf_stack_top,
             color: random_color(),
         };
-
         self.call_frames[self.frame_count] = Some(call_frame);
+        println!("Callframes SIZE: {:?}", self.call_frames.iter().filter(|cf| matches!(cf, Some(_))).count());
         self.frame_count += 1;
     }
 
@@ -527,6 +531,10 @@ impl VM {
     }
 
     fn get_variable_value(&self, variable_name: FatPointer) -> Option<&Value> {
+        debug::info(format!(
+            "Get variable value for key: {:?}",
+            variable_name
+        ));
         self.globals.get(variable_name)
     }
 

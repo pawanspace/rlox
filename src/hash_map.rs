@@ -114,7 +114,7 @@ where
         bucket as usize
     }
 
-    pub(crate) fn dump(&mut self) {
+    pub(crate) fn dump(&self) {
         println!("{:?}", self.entries);
     }
 
@@ -140,8 +140,9 @@ where
         }
     }
 
-    fn find_entry(&self, key: &FatPointer) -> Option<&Entry<T>> {
+    pub(crate) fn find_entry(&self, key: &FatPointer) -> Option<&Entry<T>> {
         let index = self.find_entry_index(key);
+        println!("Entry index: {:?}", index);
         return match index {
             Some(index) => self.entries.get(index),
             None => None,
@@ -162,7 +163,14 @@ where
             let entry = self.entries.get(bucket as usize);
             return match entry {
                 Some(entry) => match entry {
-                    Entry::Occupied(value, data) => Some(bucket as usize),
+                    Entry::Occupied(existing, _) => {
+                        if existing.eq(key) {
+                            return Some(bucket as usize);
+                        } else {
+                            bucket = (bucket + 1) % (self.capacity as u32);
+                            continue;
+                        }
+                    },
                     Entry::Vacant => None,
                     Entry::TombStone => {
                         bucket = (bucket + 1) % (self.capacity as u32);

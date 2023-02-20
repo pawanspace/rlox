@@ -156,11 +156,21 @@ impl Into<FatPointer> for &Value {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub(crate) struct FatPointer {
     pub(crate) ptr: *mut u8,
     pub(crate) size: usize,
     pub(crate) hash: u32,
+}
+
+
+impl PartialEq for FatPointer {
+    fn eq(&self, other: &Self) -> bool {
+        if matches!(self, _other) {
+           return self.ptr == other.ptr && self.size == other.size && self.hash == other.hash;
+        }
+        false
+    }
 }
 
 #[derive(Debug, Clone)]
