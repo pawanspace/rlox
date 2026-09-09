@@ -103,13 +103,16 @@ where
     pub(crate) fn insert(&mut self, key: FatPointer, value: T) -> bool {
         self.ensure_capacity();
         let bucket = self.find_bucket(&key, &self.entries);
+        // `new_value` is true when the slot was already Occupied — i.e. this
+        // insert is an *overwrite* of an existing key, not a new entry.
         let new_value = matches!(&self.entries[bucket], Entry::Occupied(_, _));
         self.entries[bucket] = Entry::Occupied(key, value);
-        // BUG: `size` is incremented unconditionally, including when
-        // `new_value` is true (an overwrite that replaced an existing entry and
-        // added no new one). Over time `size` drifts above the true count,
-        // which makes the table resize earlier than intended.
-        self.size += 1;
+        // Only count a genuinely new key toward `size`. Overwrites replace an
+        // existing entry and add nothing, so they must not increment `size`
+        // (doing so would drift the count high and trigger premature resizes).
+        if !new_value {
+            self.size += 1;
+        }
         new_value
     }
 
@@ -456,5 +459,14 @@ mod tests {
             map.get_mut(one.clone()).unwrap().id.eq(&2),
             "Expected value to update based on reference."
         );
+    }
+
+    #[test]
+    fn insert_overwrite_keeps_correct_size() {
+        let mut map = Table::init(2);
+        let one = create_fat_ptr(&mut "one");
+        map.insert(one.clone(), 1);
+        map.insert(one, 2);
+        assert_eq!(map.size, 1);
     }
 }
