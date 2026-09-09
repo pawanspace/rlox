@@ -14,10 +14,25 @@ Legend: ✅ implemented · ⬜ todo · 🔴 currently failing (open bug) · ⏸ 
 Direct tests of individual modules. Fast, no interpreter needed.
 
 ### memory
-- ⬜ **long-string round-trip** — `allocate_bytes(n)` for a string **> 24 bytes**, copy the bytes
-  in, `read_string` them back, assert byte-identical. *This is the regression test for the heap
-  overflow fix — it crashed/corrupted under the old `allocate::<String>()`.*
+- ✅ **long-string round-trip** (`can_allocated_long_string`) — `allocate_bytes(src.len())` for a
+  string **> 24 bytes**, copy the bytes in, `read_string` them back, assert byte-identical.
+  Exercises the heap-overflow regime and asserts size-to-length.
 - ⬜ `drop_bytes` on an `allocate_bytes` buffer does not crash (layout matches).
+
+> **Important — validating the memory-safety fixes with Miri.** A functional round-trip test
+> exercises the allocation path but **cannot prove** the absence of a heap overflow: an
+> out-of-bounds write is undefined behavior and may silently "work" (returning the right bytes
+> while corrupting adjacent memory), so the assertion can pass even on buggy code. To
+> *deterministically* catch the overflow — and confirm the fix — run the tests under Miri, which
+> models allocation bounds:
+>
+> ```
+> cargo +nightly miri test
+> ```
+>
+> Miri would flag the old `allocate::<String>()` out-of-bounds write as an error and pass on the
+> fixed `allocate_bytes`. Treat Miri as the real validator for anything in `memory.rs` / `unsafe`;
+> the plain `cargo test` round-trip is only a behavioral smoke test.
 
 ### hasher
 - ✅ `can_calculate_hash` (existing).
