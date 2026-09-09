@@ -459,7 +459,7 @@ impl<'c> Compiler<'c> {
     }
 
     fn resolve_from_locals(
-        &mut self,
+        &self,
         locals: Vec<Local>,
         scope_depth: usize,
         token: Token,
@@ -864,7 +864,7 @@ impl<'c> Compiler<'c> {
         self.current_chunk().write_constant(value, prev_token.line)
     }
 
-    fn str_to_float(&mut self, token: Token) -> f64 {
+    fn str_to_float(&self, token: Token) -> f64 {
         let value = self.token_name(token);
         value.parse::<f64>().unwrap()
     }
@@ -959,12 +959,12 @@ impl<'c> Compiler<'c> {
         }
     }
 
-    fn get_existing_string(&mut self, str_value: &str, hash_value: u32) -> Option<&FatPointer> {
+    fn get_existing_string(&self, str_value: &str, hash_value: u32) -> Option<&FatPointer> {
         let exiting_value = self.table.find_entry_with_value(str_value, hash_value);
         exiting_value
     }
 
-    fn prev_token_to_string(&mut self) -> (String, u32) {
+    fn prev_token_to_string(& self) -> (String, u32) {
         let token = self.parser.previous.unwrap();
         let str_value = self.token_name(token).to_owned();
         let hash_value = hasher::hash(&str_value);
@@ -1007,13 +1007,9 @@ impl<'c> Compiler<'c> {
         }
     }
 
-    fn get_rule(&mut self, token_type: TokenType) -> ParseRule {
-        parse_rule(token_type)
-    }
-
     fn binary(&mut self, _can_assign: bool) {
         let operator_type = self.parser.previous.unwrap().token_type;
-        let rule = self.get_rule(operator_type);
+        let rule = parse_rule(operator_type);
         let next_op: Precedence = num::FromPrimitive::from_u8((rule.precedence) as u8 + 1).unwrap();
         self.parse_precedence(next_op);
         self.emit_operator(operator_type);
@@ -1035,9 +1031,7 @@ impl<'c> Compiler<'c> {
 
     fn parse_precedence(&mut self, precedence: Precedence) {
         self.advance();
-        let prefix = self
-            .get_rule(self.parser.previous.unwrap().token_type)
-            .prefix;
+        let prefix = parse_rule(self.parser.previous.unwrap().token_type).prefix;
 
         if prefix.is_none() {
             self.error("Expect expression");
@@ -1050,14 +1044,10 @@ impl<'c> Compiler<'c> {
         prefix_func(self, can_assign);
 
         while precedence as u8
-            <= self
-                .get_rule(self.parser.current.unwrap().token_type)
-                .precedence as u8
+            <= parse_rule(self.parser.current.unwrap().token_type).precedence as u8
         {
             self.advance();
-            let infix = self
-                .get_rule(self.parser.previous.unwrap().token_type)
-                .infix;
+            let infix = parse_rule(self.parser.previous.unwrap().token_type).infix;
             let infix_func = infix.unwrap();
             infix_func(self, can_assign);
         }
