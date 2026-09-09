@@ -162,7 +162,6 @@ pub(crate) enum UpValue {
 pub(crate) struct CompilerContext {
     function: Obj,
     locals: Vec<Local>,
-    local_count: usize,
     up_values: Vec<UpValue>,
     up_value_count: usize,
 }
@@ -170,14 +169,13 @@ pub(crate) struct CompilerContext {
 impl CompilerContext {
     fn init() -> CompilerContext {
         let mut locals = vec![];
-        locals.resize(u8::MAX as usize, Local::Empty);
+        locals.push(Local::Empty);
 
         let mut up_values = vec![];
         up_values.resize(u8::MAX as usize, UpValue::Empty);
 
         CompilerContext {
             locals,
-            local_count: 1, // starting with 1 take first spot for top level function
             up_values,
             up_value_count: 0,
             function: Obj::Fun(Function::new_function(FunctionType::Script)),
@@ -237,7 +235,7 @@ impl<'c> Compiler<'c> {
         self.end_compiler();
         (
             self.parser.had_error,
-            self.current_context().function.clone(),
+            self.current_context_mut().function.clone(),
         )
     }
 
@@ -310,7 +308,7 @@ impl<'c> Compiler<'c> {
             self.error_at_current("Can't have more than 255 parameters.");
         }
 
-        self.current_context().update_function_arity(arity);
+        self.current_context_mut().update_function_arity(arity);
         self.consume(
             TokenType::RightParen,
             "Expect ')' at the end of function params",
@@ -431,7 +429,7 @@ impl<'c> Compiler<'c> {
 
     fn declare_variable(&mut self) {
         if self.scope_depth > 0 {
-            if self.current_context().local_count == 255 {
+            if self.current_context_mut().locals.len() == 255 {
                 self.error("Too many local variables in function.");
                 return;
             }
@@ -443,18 +441,16 @@ impl<'c> Compiler<'c> {
             if matching_token != -1 {
                 self.error("Already a variable with this name in this scope.");
             }
-            let local_count = self.current_context().local_count;
-            self.current_context().locals[local_count] = local;
-            self.current_context().local_count += 1;
+            self.current_context_mut().locals.push(local);
         }
     }
 
     fn resolve_local(&mut self, token: Token) -> i32 {
-        if self.current_context().local_count <= 0 {
+        if self.current_context_mut().locals.len() <= 0 {
             return -1;
         }
         let scope_depth = self.scope_depth;
-        let locals = self.current_context().locals.clone();
+        let locals = self.current_context_mut().locals.clone();
 
         if let Some(value) = self.resolve_from_locals(locals, scope_depth, token) {
             return value;
@@ -716,23 +712,24 @@ impl<'c> Compiler<'c> {
 
     fn end_scope(&mut self) {
         self.scope_depth -= 1;
+        let scope_depth = self.scope_depth;
         let scoped_locals = self
             .current_context()
             .locals
-            .clone()
             .iter()
             .filter(|local| match local {
-                Local::Filled(_, depth) => depth.gt(&self.scope_depth),
+                Local::Filled(_, depth) => depth.gt(&scope_depth),
                 _ => false,
             })
             .count();
-        if self.current_context().local_count == 0 {
+        let local_len = self.current_context_mut().locals.len();
+        if local_len == 0 {
             return;
         }
         for _ in 1..=scoped_locals {
             self.emit_opcode(OpCode::Pop);
         }
-        self.current_context().local_count -= scoped_locals;
+        self.current_context_mut().locals.truncate(local_len - scoped_locals);
     }
 
     fn expression_statement(&mut self) {
@@ -1070,13 +1067,15 @@ impl<'c> Compiler<'c> {
     }
 
     fn current_chunk(&mut self) -> &mut Chunk {
-        self.current_context().function.get_func_chunk()
+        self.current_context_mut().function.get_func_chunk()
     }
 
-    fn current_context(&mut self) -> &mut CompilerContext {
+    fn current_context_mut(&mut self) -> &mut CompilerContext {
         self.contexts.get_mut(self.current_context).unwrap()
     }
-
+    fn current_context(&self) -> &CompilerContext {
+        self.contexts.get(self.current_context).unwrap()
+    }
     fn previous_token(&self) -> Token {
         self.parser.previous.unwrap()
     }
