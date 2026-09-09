@@ -221,4 +221,10 @@ mod tests {
         let value = read_string(ptr, src.len());
         assert_eq!(value, src);
     }
+
+    #[test]
+    fn can_drop_allocated_bytes() {
+        let ptr = allocate_bytes(10);
+        drop_bytes(ptr, 10);
+    }
 }
