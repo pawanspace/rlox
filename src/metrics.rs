@@ -11,43 +11,31 @@
 //! moves forward and is immune to wall-clock adjustments (NTP, DST), which is
 //! exactly what you want for measuring elapsed time.
 //!
-//! ## Why a global, and why that's a problem here
+//! ## Why a global, and how it stays safe
 //! The results live in a single process-wide table so any code can record into
-//! it without threading a handle through every function. This module reaches
-//! for `static mut` to do that — see the BUG note below for why that's unsound
-//! in Rust.
+//! it without threading a handle through every function. A naive global would
+//! use `static mut`, but that is unsound in Rust (any overlapping/aliased access
+//! is undefined behavior, and it offers no thread synchronization). Instead the
+//! table is a `static OnceLock<Mutex<..>>`: an *immutable* static whose contents
+//! are mutated through interior mutability. `OnceLock` guarantees it is
+//! initialized exactly once; `Mutex` guarantees exclusive access at runtime — so
+//! no `unsafe` is needed and there is no data race.
 
 use crate::common::random_color;
 use colored::Colorize;
 use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 /// Process-wide table mapping an event name -> how long it took.
 ///
-/// `Option<..>` so it can start as `None` and be lazily created on first use
-/// (`static` initializers must be const-evaluable, and `HashMap::new()` is not
-/// usable as a `static` initializer in the way we want here).
-///
-// BUG/UNSOUND: `static mut` is undefined behavior to access if there is ANY
-// possibility of overlapping/aliasing access (Rust 2024 lints this as
-// `static_mut_refs`). Every read/write below needs `unsafe` precisely because
-// the compiler cannot guarantee exclusive access. The correct idiomatic fix is
-// `std::sync::OnceLock<Mutex<HashMap<..>>>` (or `thread_local!`), which gives
-// safe, initialized-once, synchronized access without `unsafe`.
-static mut EVENTS: Option<HashMap<String, Duration>> = None;
+/// Declared as a plain (immutable) `static`, not `static mut`. `OnceLock::new()`
+/// is a `const fn`, so it can initialize a static directly, and the map inside
+/// is created lazily on first use via `get_or_init`. Mutation happens through
+/// the `Mutex` (interior mutability), so accessing this needs no `unsafe`:
+/// `OnceLock` makes init race-free and `Mutex` makes each access exclusive.
+static EVENTS: OnceLock<Mutex<HashMap<String, Duration>>> = OnceLock::new();
 
-/// Lazily initialize the global `EVENTS` map the first time it's needed.
-///
-/// `matches!(EVENTS, None)` checks whether the map has been created yet; if
-/// not, we allocate an empty `HashMap`. Wrapped in `unsafe` because touching a
-/// `static mut` is unsafe (see the note on `EVENTS`).
-fn init_events() {
-    unsafe {
-        if matches!(EVENTS, None) {
-            EVENTS = Some(HashMap::new());
-        }
-    }
-}
 
 /// Time a closure and record the result under `name`, returning the closure's
 /// own return value untouched.
@@ -61,15 +49,12 @@ fn init_events() {
 /// `impl FnMut() -> R` accepts any closure/function that can be called to
 /// produce an `R`.
 pub(crate) fn record<R>(name: String, mut func: impl FnMut() -> R) -> R {
-    init_events();
     let start = Instant::now();
     // Run the actual work being measured.
     let result = func();
     // `elapsed()` = now - start, as a `Duration`.
     let total_time = start.elapsed();
-    unsafe {
-        EVENTS.as_mut().unwrap().insert(name, total_time);
-    }
+    EVENTS.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap().insert(name, total_time);
     result
 }
 
@@ -80,12 +65,11 @@ pub(crate) fn record<R>(name: String, mut func: impl FnMut() -> R) -> R {
 /// interpreter output above it.
 pub(crate) fn display() {
     println!("\n\n\n");
-    unsafe {
-        EVENTS.as_ref().unwrap().iter().for_each(|(key, value)| {
-            println!(
-                "{}",
-                format!("***** {:?}: {:?} *****", key, value).color(random_color())
-            );
-        });
-    }
+
+    EVENTS.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap().iter().for_each(|(key, value)| {
+        println!(
+            "{}",
+            format!("***** {:?}: {:?} *****", key, value).color(random_color())
+        );
+    });
 }
