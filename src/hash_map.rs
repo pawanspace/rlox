@@ -1,23 +1,81 @@
+//! An open-addressing hash table (`Table<T>`), plus its entry states.
+//!
+//! ## What a hash table is for here
+//! The VM needs fast key→value lookup keyed by *strings*: global variables by
+//! name, and a set of *interned* strings (so identical string literals are
+//! stored once). This table provides that. Keys are `FatPointer`s (a raw
+//! pointer + length + cached hash from `common.rs`); values are the generic
+//! `T`.
+//!
+//! ## Open addressing vs. chaining (the core idea)
+//! There are two classic ways to handle two keys hashing to the same bucket
+//! ("collisions"):
+//!   - *Chaining*: each bucket holds a linked list of entries. Simple, but
+//!     costs a pointer-chase and an allocation per node.
+//!   - *Open addressing* (used here): every entry lives directly in the bucket
+//!     array. On a collision you *probe* — walk to another slot — until you
+//!     find the key or an empty slot. No per-entry allocation, cache-friendly.
+//! This table probes *linearly*: on collision it tries the next bucket,
+//! `(i + 1) % capacity`, wrapping around the end of the array. `% capacity`
+//! is what makes the walk circle back to the start instead of running off the
+//! end. clox uses this same open-addressing + linear-probing design.
+//!
+//! ## Why deletion needs "tombstones"
+//! With linear probing, a lookup stops as soon as it hits a truly empty
+//! (`Vacant`) slot — that empty slot proves the key can't be further along the
+//! probe chain. But if you *delete* an entry by blanking it to `Vacant`, you
+//! might cut a probe chain in half and make later keys unreachable. The fix is
+//! a `TombStone`: a "was occupied, now deleted" marker that a lookup treats as
+//! "keep probing" (not "stop"), while an insert may reuse it. That is why the
+//! `Entry` enum has three states, not two.
+//!
+//! ## Load factor and resizing
+//! As a hash table fills, probe chains get longer and lookups slow down. So
+//! once the fraction of used slots ("load factor") crosses a threshold, the
+//! table grows and re-inserts everything into a bigger array, shortening the
+//! chains. See `ensure_capacity` (and the BUG note there — this
+//! implementation's threshold math is broken).
+
 use crate::common::FatPointer;
 use crate::memory;
 use std::borrow::BorrowMut;
 use std::fmt::Debug;
+
+/// The state of a single bucket in the table.
+///
+/// The three-way split is what makes safe deletion possible under linear
+/// probing (see the module docs on tombstones).
 #[derive(Debug, Clone)]
 pub(crate) enum Entry<T> {
+    /// Holds a live key/value pair.
     Occupied(FatPointer, T),
+    /// Never used — a probe that reaches here stops (the key is not present).
     Vacant,
+    /// Previously occupied, then deleted — a probe must skip past it and keep
+    /// looking; an insert may overwrite it.
     TombStone,
 }
 
+/// A hash map from `FatPointer` (string) keys to `T` values, using open
+/// addressing with linear probing.
 #[derive(Debug)]
 pub(crate) struct Table<T>
 where
     T: Debug,
     T: Clone,
 {
+    /// The bucket array. Its length is always `capacity`; each slot is one
+    /// `Entry` (Occupied / Vacant / TombStone).
     entries: Vec<Entry<T>>,
+    /// Number of buckets (the length of `entries`). Kept as a separate field
+    /// and used as the modulus for probe wraparound.
     capacity: usize,
+    /// Count of insertions. NOTE: see the BUG in `insert` — this is bumped on
+    /// every insert, even overwrites, so it can overstate the real number of
+    /// live entries.
     size: usize,
+    /// Resize threshold as a percentage (70 = grow at ~70% full). See the BUG
+    /// in `ensure_capacity`: the arithmetic never actually applies this value.
     load_factor: usize,
 }
 
@@ -26,8 +84,11 @@ where
     T: Clone,
     T: Debug,
 {
+    /// Create an empty table with `capacity` buckets, all `Vacant`.
     pub(crate) fn init(capacity: usize) -> Table<T> {
         let mut entries: Vec<Entry<T>> = vec![];
+        // Pre-fill the whole bucket array so it can be indexed directly by
+        // bucket number; open addressing needs the slots to exist up front.
         entries.resize(capacity, Entry::Vacant);
         Table {
             entries,
@@ -37,16 +98,27 @@ where
         }
     }
 
+    /// Insert `key`/`value`. Returns whether the chosen bucket was already
+    /// `Occupied` (i.e. this was an overwrite of an existing key).
     pub(crate) fn insert(&mut self, key: FatPointer, value: T) -> bool {
         self.ensure_capacity();
         let bucket = self.find_bucket(&key, &self.entries);
         let new_value = matches!(&self.entries[bucket], Entry::Occupied(_, _));
         self.entries[bucket] = Entry::Occupied(key, value);
+        // BUG: `size` is incremented unconditionally, including when
+        // `new_value` is true (an overwrite that replaced an existing entry and
+        // added no new one). Over time `size` drifts above the true count,
+        // which makes the table resize earlier than intended.
         self.size += 1;
         new_value
     }
 
+    /// Look up `key`; return `Some(&value)` if present, else `None`.
     pub(crate) fn get(&self, key: FatPointer) -> Option<&T> {
+        // NOTE: `find_entry(...).unwrap()` will panic if `find_entry` returns
+        // `None` (key not found). It happens to work only because for a present
+        // key `find_entry` returns `Some(Occupied(..))`; a missing key is a
+        // latent panic here.
         let entry = self.find_entry(&key).unwrap();
         match entry {
             Entry::Occupied(value, data) => Some(data),
@@ -54,6 +126,7 @@ where
         }
     }
 
+    /// Like `get`, but returns a mutable reference to the stored value.
     pub(crate) fn get_mut(&mut self, key: FatPointer) -> Option<&mut T> {
         let entry = self.find_entry_mut(&key).unwrap();
         match entry {
@@ -62,6 +135,10 @@ where
         }
     }
 
+    /// Delete `key`, returning its old value if it was present.
+    ///
+    /// Deletion replaces the slot with a `TombStone` (not `Vacant`) so probe
+    /// chains through this bucket stay intact — see the module docs.
     pub(crate) fn delete(&mut self, key: FatPointer) -> Option<T> {
         let bucket = self.find_bucket(&key, &self.entries);
         let value = self.get_at_index(bucket);
@@ -71,10 +148,12 @@ where
         value
     }
 
+    /// Overwrite bucket `bucket` with a `TombStone` marker.
     fn insert_tombstone(&mut self, bucket: usize) {
         self.entries[bucket] = Entry::TombStone;
     }
 
+    /// Read (clone out) the value at `bucket`, if that slot is `Occupied`.
     fn get_at_index(&mut self, bucket: usize) -> Option<T> {
         let entry = &self.entries[bucket];
         return match entry {
@@ -83,12 +162,28 @@ where
         };
     }
 
+    /// Grow and rehash the table when it gets too full.
+    ///
+    /// Growing means: allocate a bigger bucket array, then re-insert every live
+    /// entry (their bucket index depends on `capacity`, so it changes when the
+    /// capacity changes — everything must be re-placed).
     fn ensure_capacity(&mut self) {
+        // BUG: this threshold test is integer arithmetic and almost never
+        // fires as intended. `(self.size + 1) / self.capacity` is integer
+        // division, so it is 0 until `size + 1 >= capacity`, then jumps to 1.
+        // So `... * 100 > 70` is false (0) until the table is essentially full,
+        // then true (100). The `load_factor` of 70 is effectively ignored; the
+        // table only grows when nearly 100% full. Worse, a completely full
+        // table would make `find_bucket` loop forever (see its BUG note). The
+        // intended test is roughly `(size + 1) * 100 > capacity * load_factor`.
         if ((self.size + 1) / self.capacity) * 100 > self.load_factor {
             self.capacity = (self.capacity * 2) + 1;
             let mut temp_entries: Vec<Entry<T>> = vec![];
             temp_entries.resize(self.capacity, Entry::Vacant);
             self.size = 0;
+            // Re-insert every occupied entry into the new, larger array.
+            // Tombstones and vacants are dropped in the process (a nice
+            // side-effect of rehashing: it clears out deletion markers).
             for entry in self.entries.iter() {
                 match entry {
                     Entry::Occupied(key, value) => {
@@ -104,34 +199,56 @@ where
         }
     }
 
+    /// Find the bucket index where `key` should live: start at
+    /// `hash % capacity`, then probe forward while the slot is "occupied by a
+    /// *different* key" until a usable slot is found.
     fn find_bucket(&self, key: &FatPointer, entries: &Vec<Entry<T>>) -> usize {
         let mut bucket = key.hash % (self.capacity as u32);
 
+        // BUG: this loop only stops when `is_occupied` returns false — i.e. at a
+        // Vacant/TombStone slot, or the same key. If the table were completely
+        // full of *different* keys with no empty slot, this would loop forever.
+        // In practice `ensure_capacity` (mis)fires just before full, so it is
+        // usually avoided — but it is not robust.
         while self.is_occupied(bucket, key, entries) {
+            // `+ 1` moves to the next slot; `% capacity` wraps back to 0 at the
+            // end so the probe is circular.
             bucket = (bucket + 1) % (self.capacity as u32);
         }
 
         bucket as usize
     }
 
+    /// Debug helper: print the whole bucket array.
     pub(crate) fn dump(&self) {
         println!("{:?}", self.entries);
     }
 
+    /// Interning lookup: find an existing key whose *string content* equals
+    /// `str_value`, matching by decoding the stored bytes.
+    ///
+    /// This is used during compilation to reuse an already-stored copy of a
+    /// string instead of allocating a new one. It matches by comparing the
+    /// actual characters (via `read_string`), which is different from how
+    /// `find_entry_index` matches (by `FatPointer` equality) — see the NOTE on
+    /// `is_occupied`.
     pub(crate) fn find_entry_with_value(&self, str_value: &str, hash: u32) -> Option<&FatPointer> {
         let mut bucket = hash % (self.capacity as u32);
         loop {
             return match &self.entries[bucket as usize] {
                 Entry::Occupied(existing, _) => {
-                    // if key is same we will use the same index
+                    // Same *content* => reuse this stored string.
                     if memory::read_string(existing.ptr, existing.size).eq(str_value) {
                         Some(&existing)
                     } else {
+                        // Collision with a different string: probe forward.
                         bucket = (bucket + 1) % (self.capacity as u32);
                         continue;
                     }
                 }
+                // A truly empty slot proves the string isn't stored: stop.
                 Entry::Vacant => None,
+                // Deleted marker: the string may still be further along.
                 Entry::TombStone => {
                     bucket = (bucket + 1) % (self.capacity as u32);
                     continue;
@@ -140,15 +257,17 @@ where
         }
     }
 
+    /// Return a shared reference to the `Entry` for `key`, if found.
     pub(crate) fn find_entry(&self, key: &FatPointer) -> Option<&Entry<T>> {
         let index = self.find_entry_index(key);
-        println!("Entry index: {:?}", index);
+        println!("Entry index: {:?}", index); // stray debug output
         return match index {
             Some(index) => self.entries.get(index),
             None => None,
         };
     }
 
+    /// Mutable-reference version of `find_entry`.
     fn find_entry_mut(&mut self, key: &FatPointer) -> Option<&mut Entry<T>> {
         let index = self.find_entry_index(key);
         return match index {
@@ -157,6 +276,8 @@ where
         };
     }
 
+    /// Core lookup: probe from `hash % capacity` and return the bucket index of
+    /// the entry matching `key`, or `None` if a `Vacant` slot is reached first.
     fn find_entry_index(&self, key: &FatPointer) -> Option<usize> {
         let mut bucket = key.hash % (self.capacity as u32);
         loop {
@@ -164,6 +285,10 @@ where
             return match entry {
                 Some(entry) => match entry {
                     Entry::Occupied(existing, _) => {
+                        // Matches by `FatPointer` equality (see common.rs: same
+                        // ptr + size + hash). Contrast with `is_occupied`, which
+                        // compares only the raw pointer address, and with
+                        // `find_entry_with_value`, which compares string bytes.
                         if existing.eq(key) {
                             return Some(bucket as usize);
                         } else {
@@ -171,7 +296,9 @@ where
                             continue;
                         }
                     },
+                    // Empty slot: key definitively absent, stop probing.
                     Entry::Vacant => None,
+                    // Deleted: skip and keep probing.
                     Entry::TombStone => {
                         bucket = (bucket + 1) % (self.capacity as u32);
                         continue;
@@ -182,21 +309,36 @@ where
         }
     }
 
+    /// Decide whether `find_bucket` should keep probing past `bucket`.
+    ///
+    /// Returns `true` (keep going) only when the slot holds a *different* key.
+    /// A slot holding the same key, or an empty/tombstone slot, returns `false`
+    /// so `find_bucket` stops there.
     fn is_occupied(&self, bucket: u32, key: &FatPointer, entries: &Vec<Entry<T>>) -> bool {
         match &entries[bucket as usize] {
             Entry::Occupied(existing, _) => {
-                // if key is same we will use the same index
+                // NOTE: this matches by raw pointer ADDRESS (`memory::eq`),
+                // whereas `find_entry_index` matches by full `FatPointer`
+                // equality and `find_entry_with_value` matches by string
+                // content. These three notions of "same key" are inconsistent.
+                // It mostly works because interning guarantees equal strings
+                // share one pointer — but keys inserted from distinct pointers
+                // with equal content would not be recognised as the same.
                 if memory::eq(existing.ptr, key.ptr) {
                     false
                 } else {
                     true
                 }
             }
+            // A tombstone is treated as reusable here (probe stops), which is
+            // fine for insertion but is part of why the matching rules above
+            // must be read carefully.
             Entry::Vacant | Entry::TombStone => false,
         }
     }
 }
 
+/// A tiny value type used only by the unit tests below.
 #[derive(Debug, Clone)]
 struct TestValue {
     id: u32,
@@ -215,6 +357,7 @@ mod tests {
         }
     }
 
+    // Two distinct keys can coexist in the table (basic collision-free insert).
     #[test]
     fn can_hold_multiple_keys() {
         let mut map = Table::init(2);
@@ -226,6 +369,8 @@ mod tests {
         assert!(map.size == 2);
     }
 
+    // Two separate tables are independent — entries in one don't leak into the
+    // other, and each can be read back correctly.
     #[test]
     fn can_hold_multiple_keys_multiple_tables() {
         let mut map = Table::init(2);
@@ -247,6 +392,7 @@ mod tests {
         assert_eq!(map.get(one.clone()), Some(&true));
     }
 
+    // Values are retrievable by key and preserved distinctly (true vs false).
     #[test]
     fn can_hold_and_return_multiple_keys() {
         let mut map = Table::init(2);
@@ -260,6 +406,8 @@ mod tests {
         assert_eq!(map.get(two.clone()), Some(&false));
     }
 
+    // After deletion the key reads back as absent (tombstone path works for
+    // lookup).
     #[test]
     fn can_hold_and_delete_multiple_keys() {
         let mut map = Table::init(2);
@@ -273,6 +421,8 @@ mod tests {
         assert_eq!(map.get(one.clone()), None);
     }
 
+    // Demonstrates automatic growth: capacity jumps (1 -> 3 -> 7 via the
+    // `capacity * 2 + 1` rule in ensure_capacity) as the table fills.
     #[test]
     fn can_expand_capacity_as_required() {
         let mut map = Table::init(1);
@@ -290,6 +440,8 @@ mod tests {
         assert_eq!(map.capacity, 7);
     }
 
+    // `get_mut` hands out a mutable reference to the stored value, so mutations
+    // through it persist in the table.
     #[test]
     fn can_handle_reference() {
         let mut map = Table::init(1);
