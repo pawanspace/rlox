@@ -41,18 +41,23 @@ use std::mem;
 /// Allocate an uninitialised block sized/aligned for **one value of type `T`**
 /// and return a raw pointer to its first byte.
 ///
-/// `Layout::new::<T>()` computes the size and alignment of the type `T` itself.
+/// Allocate `len` raw bytes on the heap and return a pointer to them.
 ///
-/// BUG: callers use this as `allocate::<String>()` to get storage for the
-/// *contents* of a string, then `copy` the actual bytes in. But
-/// `Layout::new::<String>()` is the size of the `String` *struct* — 24 bytes on
-/// a 64-bit target (a pointer + length + capacity), NOT the length of the text.
-/// Copying a string longer than 24 bytes therefore writes past the end of this
-/// allocation: a heap buffer overflow / undefined behaviour. To store `n` bytes
-/// of text the code should build a byte-sized layout, e.g.
-/// `Layout::from_size_align(n, 1)`, not `Layout::new::<String>()`.
-pub fn allocate<T>() -> *mut u8 {
-    let layout = Layout::new::<T>();
+/// This is the byte-oriented allocator used to store string *contents*. The
+/// caller passes the exact number of bytes it needs (e.g. `str.len()`), so the
+/// allocation is always sized to the actual text — unlike a type-based
+/// `Layout::new::<T>()`, which would give the size of a *type* (`size_of::<T>()`)
+/// rather than a dynamic byte count.
+///
+/// Alignment is `1` because the buffer holds bytes (`u8`), which can live at any
+/// address. That alignment MUST match the one used to free it — see
+/// [`drop_bytes`], which also uses `from_size_align(len, 1)`.
+///
+/// `from_size_align` returns a `Result` (it can fail if the alignment isn't a
+/// power of two or the rounded size overflows); with alignment `1` this only
+/// fails on absurd lengths, so we `unwrap`.
+pub fn allocate_bytes(len: usize) -> *mut u8 {
+    let layout = Layout::from_size_align(len, 1).unwrap();
     unsafe {
         // `alloc` returns a null pointer on allocation failure rather than
         // panicking, so we must check it ourselves.
@@ -136,6 +141,24 @@ where
 /// match a correctly byte-sized allocation.
 pub fn drop<T>(ptr: *mut u8) {
     let layout = Layout::new::<T>();
+    unsafe {
+        dealloc(ptr, layout);
+    }
+}
+
+/// Free a buffer previously produced by [`allocate_bytes`].
+///
+/// `dealloc` requires the *exact same* `Layout` used to allocate — same size and
+/// same alignment — so this rebuilds `from_size_align(len, 1)` to match
+/// `allocate_bytes`. Because a byte allocation records no length of its own, the
+/// caller must remember it; the VM keeps it in `FatPointer.size`.
+///
+/// NOTE: nothing calls this yet — string memory currently leaks. Freeing is only
+/// safe once something tracks when a string is truly unreachable (Chapter 26,
+/// garbage collection); freeing an interned string that is still referenced
+/// elsewhere would be a use-after-free.
+pub fn drop_bytes(ptr: *mut u8, len: usize) {
+    let layout = Layout::from_size_align(len, 1).unwrap();
     unsafe {
         dealloc(ptr, layout);
     }

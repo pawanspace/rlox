@@ -432,12 +432,11 @@ impl From<FatPointer> for Obj {
 impl From<&mut str> for Obj {
     fn from(str_value: &mut str) -> Self {
         let hash_value = hasher::hash(str_value);
-        // BUG: `allocate::<String>()` reserves `size_of::<String>()` bytes (the
-        // size of the String *struct*, ~24 bytes), NOT the length of the text.
-        // Copying `str_value.len()` bytes into it overflows the allocation for
-        // any longer string — undefined behavior. It should allocate
-        // `str_value.len()` bytes.
-        let str_ptr = memory::allocate::<String>();
+        // Allocate exactly `str_value.len()` bytes for the text, then copy the
+        // contents in. (Previously this called `allocate::<String>()`, which
+        // reserved the 24-byte String struct header rather than the text length
+        // and overflowed the buffer for longer strings.)
+        let str_ptr = memory::allocate_bytes(str_value.len());
         memory::copy(str_value.as_mut_ptr(), str_ptr, str_value.len(), 0);
         let fat_ptr = FatPointer {
             ptr: str_ptr,

@@ -1368,19 +1368,18 @@ impl<'c> Compiler<'c> {
     /// Allocate a brand-new interned string: copy its bytes into manually
     /// managed memory, wrap it in a `FatPointer`, insert it into the intern
     /// table, and add it to the constant pool.
-    // BUG: `memory::allocate::<String>()` allocates `size_of::<String>()`
-    // bytes (the 24-byte String struct header), NOT `str_value.len()` bytes.
-    // The subsequent copy of `str_value.len()` bytes therefore overflows the
-    // allocation for any string longer than that header — a heap buffer
-    // overflow / undefined behavior. It should allocate `str_value.len()`
-    // bytes.
+    ///
+    /// Storage is sized to `str_value.len()` via `memory::allocate_bytes`, i.e.
+    /// the exact byte length of the text. (This used to call
+    /// `allocate::<String>()`, which reserved the 24-byte `String` struct header
+    /// instead of the text length and overflowed on longer strings.)
     fn create_new_string(
         &mut self,
         mut str_value: String,
         hash_value: u32,
         emit_constant: bool,
     ) -> usize {
-        let str_ptr = memory::allocate::<String>();
+        let str_ptr = memory::allocate_bytes(str_value.len());
         let src = str_value.as_mut_ptr();
         memory::copy(src, str_ptr, str_value.len(), 0);
         let fat_ptr = FatPointer {

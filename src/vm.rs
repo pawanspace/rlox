@@ -813,7 +813,8 @@ impl VM {
         let second = Into::<FatPointer>::into(second_val.as_ref().unwrap());
         let first = Into::<FatPointer>::into(first_val.as_ref().unwrap());
 
-        let ptr = memory::allocate::<String>();
+        let total = first.size + second.size;
+        let ptr = memory::allocate_bytes(total);
         memory::copy(first.ptr, ptr, first.size, 0);
         memory::copy(second.ptr, ptr, second.size, first.size);
 
