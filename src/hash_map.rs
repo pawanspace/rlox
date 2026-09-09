@@ -119,9 +119,9 @@ where
         // `None` (key not found). It happens to work only because for a present
         // key `find_entry` returns `Some(Occupied(..))`; a missing key is a
         // latent panic here.
-        let entry = self.find_entry(&key).unwrap();
+        let entry = self.find_entry(&key);
         match entry {
-            Entry::Occupied(value, data) => Some(data),
+            Some(Entry::Occupied(value, data)) => Some(data),
             _ => None,
         }
     }
