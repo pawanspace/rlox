@@ -38,9 +38,6 @@ use std::alloc::{alloc, dealloc, Layout};
 use std::fmt::Debug;
 use std::mem;
 
-/// Allocate an uninitialised block sized/aligned for **one value of type `T`**
-/// and return a raw pointer to its first byte.
-///
 /// Allocate `len` raw bytes on the heap and return a pointer to them.
 ///
 /// This is the byte-oriented allocator used to store string *contents*. The
