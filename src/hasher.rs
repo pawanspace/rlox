@@ -19,14 +19,12 @@
 /// Compute the 32-bit FNV-1a hash of `value`.
 pub(crate) fn hash(value: &str) -> u32 {
     let mut hash = 2166136261; // FNV offset basis (u32 inferred from the constant)
-    let chars: Vec<char> = value.chars().collect();
-    // NOTE: this loops over `value.len()` (the number of *bytes* in the UTF-8
-    // string) but indexes `chars[i]` (a vector of Unicode *chars*). For pure
-    // ASCII the byte count equals the char count so it works, but for any
-    // multi-byte character byte_len > char_count, so `chars[i]` will panic with
-    // an out-of-bounds index. A byte-oriented hash would iterate `value.bytes()`.
-    for i in 0..value.len() {
-        hash ^= chars[i] as u32; // FNV-1a: XOR the byte/char value into the hash first
+    // Iterate the UTF-8 *bytes* of the string. This is canonical FNV-1a (which is
+    // defined over bytes) and matches clox; it is also correct for non-ASCII input
+    // and can never index out of bounds. For pure-ASCII strings a byte equals its
+    // char, so existing hashes are unchanged.
+    for b in value.bytes()  {
+        hash ^= b as u32; // FNV-1a: XOR the byte into the hash first
         hash = hash.wrapping_mul(16777619); // then multiply by the FNV prime.
                                             // `wrapping_mul` lets the u32 overflow and wrap
                                             // around instead of panicking — overflow is the
@@ -45,5 +43,15 @@ mod tests {
     #[test]
     fn can_calculate_hash() {
         assert_eq!(hash("one"), 3123124719);
+    }
+
+    #[test]
+    fn can_hash_empty_string() {
+        assert_eq!(hash(""), 2166136261);
+    }
+
+    #[test]
+    fn can_hash_nonascii_chars() {
+        assert_eq!(hash("café"), hash("café"))
     }
 }
