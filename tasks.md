@@ -54,8 +54,9 @@ Priority key: 🔴 critical (memory safety / crashes / wrong results) · 🟠 co
   (`(size+1)/capacity`), so it effectively only resizes when the table is full; a full table can
   make `find_bucket` loop forever. *Fix:* compare as `(size+1)*100 > capacity*load_factor`.
 
-- [ ] **`insert` inflates `size` on overwrite** — `hash_map.rs::insert`. `size += 1` runs even when
-  replacing an existing key. *Fix:* only increment when the slot was not already occupied.
+- [x] **`insert` inflates `size` on overwrite** — fixed. `insert` now increments `size` only for a
+  genuinely new key (`if !new_value`), so overwrites no longer drift the count. Covered by
+  `insert_overwrite_keeps_correct_size`.
 
 - [ ] **Inconsistent key matching** — `hash_map.rs`. `is_occupied` matches by pointer (`memory::eq`)
   while `find_entry_index` uses `FatPointer::eq` and `find_entry_with_value` uses string content;
@@ -77,9 +78,9 @@ Priority key: 🔴 critical (memory safety / crashes / wrong results) · 🟠 co
 - [ ] **`ValueArray::count()` underflows on empty** — `value.rs`. `len() - 1` panics if empty; the
   name is misleading (it returns an index). *Fix:* rename / guard.
 
-- [ ] **Non-ASCII hashing panic** — `hasher.rs`. Loops `0..value.len()` (byte length) but indexes
-  `chars[i]` (char count); differs for non-ASCII and panics. *Fix:* iterate `value.chars()` or
-  `value.bytes()` consistently.
+- [x] **Non-ASCII hashing panic** — fixed. `hash` now iterates `value.bytes()` (canonical FNV-1a),
+  so multi-byte characters no longer cause an out-of-bounds `chars[i]` panic; ASCII hashes
+  unchanged. Covered by empty-string and non-ASCII tests in `hasher.rs`.
 
 ---
 

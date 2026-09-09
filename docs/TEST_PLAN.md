@@ -1,7 +1,7 @@
 # rlox — Test Plan
 
-Current state: **7 tests, all in `hash_map.rs`/`hasher.rs`; 1 is failing** (a real open bug).
-Nothing tests the scanner, compiler, VM, string allocation, or metrics. This plan builds
+Current state: **11 tests passing, 0 failing** (`hash_map.rs`, `hasher.rs`, `memory.rs`). Still
+nothing tests the scanner, compiler, VM behavior, or metrics. This plan builds
 coverage in layers, cheapest and highest-value first, and turns every bug in
 [`tasks.md`](../tasks.md) into a regression test.
 
@@ -17,7 +17,8 @@ Direct tests of individual modules. Fast, no interpreter needed.
 - ✅ **long-string round-trip** (`can_allocated_long_string`) — `allocate_bytes(src.len())` for a
   string **> 24 bytes**, copy the bytes in, `read_string` them back, assert byte-identical.
   Exercises the heap-overflow regime and asserts size-to-length.
-- ⬜ `drop_bytes` on an `allocate_bytes` buffer does not crash (layout matches).
+- ✅ `drop_bytes` on an `allocate_bytes` buffer does not crash (`can_drop_allocated_bytes`) —
+  confirms the alloc/free layouts match (align 1). (Smoke test; Miri validates the layout pairing.)
 
 > **Important — validating the memory-safety fixes with Miri.** A functional round-trip test
 > exercises the allocation path but **cannot prove** the absence of a heap overflow: an
@@ -36,26 +37,48 @@ Direct tests of individual modules. Fast, no interpreter needed.
 
 ### hasher
 - ✅ `can_calculate_hash` (existing).
-- ⬜ empty string, and a **non-ASCII** string — the latter currently panics (`value.len()` bytes
-  vs `chars[i]` indexing bug). Mark `#[ignore]` until that bug is fixed.
+- ✅ empty string and **non-ASCII** string — the non-ASCII panic (`value.len()` bytes vs `chars[i]`)
+  is fixed; `hash` now iterates `value.bytes()`. Tests assert the empty-string seed value and that
+  non-ASCII input hashes without panicking / deterministically.
 
 ### hash_map
 - ✅ insert/get/expand/reference (existing).
-- 🔴 `can_hold_and_delete_multiple_keys` — **failing**, flags the delete/tombstone/probing bug.
+- ✅ `can_hold_and_delete_multiple_keys` — now passing after the `get` `Option`-match fix (was
+  failing on the `find_entry(..).unwrap()` panic).
   Keep as the regression test; fix the code, not the test.
-- ⬜ insert-overwrite does not inflate `size` (open bug).
-- ⬜ lookup succeeds after a probe chain crosses a tombstone (open bug).
+- ✅ **insert-overwrite keeps size accurate** (`insert_overwrite_keeps_correct_size`). *Given* a
+  table, `insert("k", 1)` then `insert("k", 2)`. *Expect* `map.size == 1` (one distinct key). Fixed:
+  `insert` now increments `size` only for a new key.
+- ⬜ **lookup probes past a tombstone** (open bug). *Given* a small table where keys `A` and `B`
+  hash to the same bucket (so `B` is placed after `A` by linear probing), `delete(A)` (leaving a
+  tombstone in `A`'s slot). *Expect* `get(B) == Some(&B_value)` — the probe must continue past the
+  tombstone rather than stop at it and report `B` missing.
 
 ### scanner
-- ⬜ source string → expected `TokenType` sequence (operators, keywords vs identifiers, numbers,
-  strings, two-char operators like `==`/`<=`, comments/whitespace skipped, EOF).
-- ⬜ unterminated string → `Error` token.
+- ⬜ **keyword vs identifier.** *Given* source `"var x"`, scan tokens. *Expect* `[Var, Identifier,
+  Eof]` — `var` is a keyword, `x` is an identifier (the trie must not misclassify `x` or a word
+  like `variable` as `Var`).
+- ⬜ **operators and two-char operators.** *Given* `"a <= b == 1"`, scan. *Expect* `[Identifier,
+  LessEqual, Identifier, EqualEqual, Number, Eof]` — `<=`/`==` are single tokens, not `< =`.
+- ⬜ **number and string literals.** *Given* `"12.5 \"hi\""`, scan. *Expect* `[Number, String, Eof]`,
+  with the `Number` token spanning `12.5` and the `String` token spanning the quoted text.
+- ⬜ **whitespace/comments skipped.** *Given* `"a // note\n b"`, scan. *Expect* `[Identifier,
+  Identifier, Eof]` (the `// note` comment and newline produce no tokens) and the second token's
+  `line == 2`.
+- ⬜ **unterminated string.** *Given* `"\"abc"` (no closing quote), scan. *Expect* an `Error` token.
 
 ### chunk / common / value
-- ⬜ constant-index encoding: `write_constant` picks `Constant` (≤255) vs `ConstantLong` and
-  `write_index` round-trips.
-- ⬜ `Value`/`Obj` equality for numbers/bools/nil.
-- ⬜ document (via a test) the known pointer-identity string-equality limitation.
+- ⬜ **short constant index.** *Given* a fresh chunk, `write_constant(v)` when the index is ≤255.
+  *Expect* the emitted opcode byte is `OpCode::Constant` followed by a **1-byte** index, and the
+  returned index reads back the same value from the constant pool.
+- ⬜ **long constant index.** *Given* a chunk with >255 constants already, `write_constant(v)`.
+  *Expect* the opcode is `OpCode::ConstantLong` followed by an **8-byte** index encoding.
+- ⬜ **value equality.** *Expect* `Number(1.0) == Number(1.0)`, `Missing == Missing`,
+  `Boolean(true) != Boolean(false)`, and `Number(1.0) != Boolean(true)` (cross-type is unequal).
+- ⬜ **string equality is pointer identity (documents current behavior).** *Given* two `Obj::Str`
+  built from separately-allocated buffers holding the same text, *expect* they compare **not
+  equal** — pinning today's known limitation. Flip this assertion when the equality bug in
+  `tasks.md` is fixed.
 
 ---
 
@@ -65,15 +88,19 @@ One test per entry in `tasks.md`, named after the bug. Fixed → green; open →
 allowed-red) with a comment linking the task, so the suite doubles as the tracker and a fixed bug
 can't silently regress.
 
-- ✅ (to add) heap overflow → covered by the memory long-string test above.
-- ✅ (to add) `static mut` metrics → covered by the metrics test below.
-- ⬜ local scoping (fixed) → needs Layer 3 (e2e) to assert program output.
-- ⬜ open bugs (arity abort, dead comparisons, load factor, non-ASCII hash, etc.) → `#[ignore]`d
-  tests that go green as each is fixed.
+- ✅ heap overflow → covered by `can_allocated_long_string` (memory).
+- ✅ non-ASCII hash panic → covered by the hasher non-ASCII test.
+- ✅ `get` panic on absent key → covered by `can_hold_and_delete_multiple_keys`.
+- ⬜ `static mut` metrics → **not yet covered** (see the metrics test below).
+- ⬜ local scoping (fixed in code) → needs Layer 3 (e2e) to assert program output; the concrete
+  case is under Layer 3.
+- ⬜ remaining open bugs (`get_mut` panic, arity abort, dead comparisons, load factor, insert-size)
+  → one `#[ignore]`d test each, flipped to green as the bug is fixed.
 
 ### metrics
-- ⬜ `record("x", || 42)` returns `42` and does not panic; `display()` runs without panicking.
-  (Smoke test that the `OnceLock<Mutex<..>>` path works and there's no `unsafe`/UB.)
+- ⬜ **record returns value and stores timing.** *Given* `record("x", || 2 + 3)`, *expect* the
+  return value is `5` and, afterward, the events table contains the key `"x"`; then `display()`
+  runs without panicking. Confirms the `OnceLock<Mutex<..>>` path works with no `unsafe`/UB.
 
 ---
 
@@ -89,14 +116,25 @@ there is nothing to assert on. Prerequisite refactor:
   (e.g. `impl Write` or a `Vec<String>` on the VM) instead of `println!` directly. `interpret`
   returns/exposes the captured output.
 
-Once unblocked:
-- ⬜ arithmetic & precedence (`1 + 2 * 3` → `7`).
-- ⬜ globals, locals, block scoping — including the **scoping regression**: the shadowed
-  `for (var i = ...)` case that prints the global afterward.
-- ⬜ `if`/`else`, `and`/`or` short-circuit, `while`, `for`.
-- ⬜ functions: params, `return`, recursion, first-class assignment.
-- ⬜ closures (once Chapter 25 runtime is finished).
-- ⬜ runtime errors surface as errors (arity mismatch, type mismatch) rather than logging.
+Once unblocked (each: run the source, assert the captured output):
+- ⬜ **arithmetic & precedence.** `print 1 + 2 * 3;` → `7` (not `9`).
+- ⬜ **globals & assignment.** `var a = 1; a = a + 4; print a;` → `5`.
+- ⬜ **block scoping.** `var x = 1; { var x = 2; print x; } print x;` → `2` then `1`.
+- ⬜ **scoping regression** (guards the fixed bug). `var i = 10; while (i < 15) { i = i + 1; }
+  for (var i = 8; i < 10; i = i + 1) {} print i;` → `15` (the `for`'s local `i` must not leak;
+  before the fix this printed `10`).
+- ⬜ **if/else.** `if (false) print "a"; else print "b";` → `b`.
+- ⬜ **short-circuit.** `print false and (1/0);` → `false` with no divide evaluated;
+  `print true or (1/0);` → `true`.
+- ⬜ **while / for counts.** loop bodies run the expected number of times (e.g. `for (var i=0;
+  i<3; i=i+1) print i;` → `0`,`1`,`2`).
+- ⬜ **functions.** params + `return` (`fun add(a,b){ return a+b; } print add(2,3);` → `5`),
+  recursion (factorial → correct value), and first-class assignment (`var f = add; print f(1,1);`
+  → `2`).
+- ⬜ **closures** (once Chapter 25 runtime is finished): a counter closure captures and mutates an
+  upvalue across calls → `1`, `2`, `3`.
+- ⬜ **runtime errors** surface as an error result (not a silent log): calling with the wrong arg
+  count, or `-"x"`, yields `InterpretRuntimeError` and no bogus output.
 
 ---
 
