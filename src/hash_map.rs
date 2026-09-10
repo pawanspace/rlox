@@ -70,9 +70,9 @@ where
     /// Number of buckets (the length of `entries`). Kept as a separate field
     /// and used as the modulus for probe wraparound.
     capacity: usize,
-    /// Count of insertions. NOTE: see the BUG in `insert` — this is bumped on
-    /// every insert, even overwrites, so it can overstate the real number of
-    /// live entries.
+    /// Number of live entries. Incremented only when `insert` adds a new key
+    /// (not on overwrite) and decremented by `delete`, so it tracks the true
+    /// count of occupied slots.
     size: usize,
     /// Resize threshold as a percentage (70 = grow at ~70% full). See the BUG
     /// in `ensure_capacity`: the arithmetic never actually applies this value.
@@ -118,10 +118,9 @@ where
 
     /// Look up `key`; return `Some(&value)` if present, else `None`.
     pub(crate) fn get(&self, key: FatPointer) -> Option<&T> {
-        // NOTE: `find_entry(...).unwrap()` will panic if `find_entry` returns
-        // `None` (key not found). It happens to work only because for a present
-        // key `find_entry` returns `Some(Occupied(..))`; a missing key is a
-        // latent panic here.
+        // Match on the `Option` from `find_entry`: `Some(Occupied)` is a hit,
+        // anything else (a `None`, or a non-Occupied slot) is a miss returning
+        // `None`. A missing key must not panic.
         let entry = self.find_entry(&key);
         match entry {
             Some(Entry::Occupied(value, data)) => Some(data),
@@ -131,9 +130,9 @@ where
 
     /// Like `get`, but returns a mutable reference to the stored value.
     pub(crate) fn get_mut(&mut self, key: FatPointer) -> Option<&mut T> {
-        let entry = self.find_entry_mut(&key).unwrap();
+        let entry = self.find_entry_mut(&key);
         match entry {
-            Entry::Occupied(value, data) => Some(data),
+            Some(Entry::Occupied(value, data)) => Some(data),
             _ => None,
         }
     }
@@ -147,6 +146,7 @@ where
         let value = self.get_at_index(bucket);
         if value.is_some() {
             self.insert_tombstone(bucket);
+            self.size -= 1;
         }
         value
     }
@@ -171,15 +171,13 @@ where
     /// entry (their bucket index depends on `capacity`, so it changes when the
     /// capacity changes — everything must be re-placed).
     fn ensure_capacity(&mut self) {
-        // BUG: this threshold test is integer arithmetic and almost never
-        // fires as intended. `(self.size + 1) / self.capacity` is integer
-        // division, so it is 0 until `size + 1 >= capacity`, then jumps to 1.
-        // So `... * 100 > 70` is false (0) until the table is essentially full,
-        // then true (100). The `load_factor` of 70 is effectively ignored; the
-        // table only grows when nearly 100% full. Worse, a completely full
-        // table would make `find_bucket` loop forever (see its BUG note). The
-        // intended test is roughly `(size + 1) * 100 > capacity * load_factor`.
-        if ((self.size + 1) / self.capacity) * 100 > self.load_factor {
+        // Resize once the projected load crosses `load_factor` percent. The
+        // comparison cross-multiplies — `(size + 1) * 100 > capacity * load_factor`
+        // — instead of dividing, so it never truncates. (An earlier version wrote
+        // `((size + 1) / capacity) * 100 > load_factor`, where the integer
+        // division collapsed to 0 until the table was essentially full, ignoring
+        // the 70% target entirely.)
+        if (self.size + 1)  * 100 > self.load_factor * self.capacity {
             self.capacity = (self.capacity * 2) + 1;
             let mut temp_entries: Vec<Entry<T>> = vec![];
             temp_entries.resize(self.capacity, Entry::Vacant);
@@ -468,5 +466,64 @@ mod tests {
         map.insert(one.clone(), 1);
         map.insert(one, 2);
         assert_eq!(map.size, 1);
+    }
+
+    #[test]
+    fn get_probes_past_tombstone() {
+        let mut map = Table::init(8);
+        let mut a_s = String::from("a");
+        let mut b_s = String::from("b");
+        let a = FatPointer {ptr: a_s.as_mut_ptr(), size: a_s.len(), hash: 0 };
+        let b = FatPointer {ptr: b_s.as_mut_ptr(), size: b_s.len(), hash: 0 };
+
+        map.insert(a.clone(), 1);
+        map.insert(b.clone(), 2);
+        map.delete(a);
+
+        assert_eq!(map.get(b), Some(&2));
+    }
+
+    // Open bug: `find_bucket` stops at the first tombstone, so re-inserting a key
+    // whose slot was tombstoned writes a duplicate instead of finding the existing
+    // entry further along the probe chain (see tasks.md / HASHMAP.md gap #2).
+    // Ignored until `find_bucket`'s insert probe is fixed to remember the first
+    // tombstone but keep scanning for a match.
+    #[ignore = "open bug: insert stops at first tombstone -> duplicate; see HASHMAP.md gap #2"]
+    #[test]
+    fn reinsert_after_delete_does_not_duplicate() {
+        let mut map = Table::init(8);
+        let mut a_s = String::from("a");
+        let mut b_s = String::from("b");
+        let a = FatPointer {ptr: a_s.as_mut_ptr(), size: a_s.len(), hash: 0 };
+        let b = FatPointer {ptr: b_s.as_mut_ptr(), size: b_s.len(), hash: 0 };
+
+        map.insert(a.clone(), 1);
+        map.insert(b.clone(), 2);
+        map.delete(a);
+        assert_eq!(map.size, 1);
+        map.insert(b.clone(), 3);
+        assert_eq!(map.size, 1);
+    }
+
+    #[test]
+    fn find_entry_mut_should_not_panic_for_missing_key() {
+        let mut map = Table::init(8);
+        let one = create_fat_ptr(&mut "one");
+        let missing = create_fat_ptr(&mut "missing");
+        map.insert(one.clone(), 1);
+        assert!(map.get_mut(missing).is_none());
+        assert!(map.get_mut(one).is_some());
+    }
+
+    #[test]
+    fn resizes_when_load_factor_exceeded() {
+        let mut map = Table::init(10);
+        for i in 0..8 {
+            let mut key = format!("key-{}", i);
+            let k = FatPointer{ptr: key.as_mut_ptr(), size: key.len(), hash: i as u32};
+            map.insert(k.clone(), i);
+        }
+
+        assert!(map.capacity > 10);
     }
 }
