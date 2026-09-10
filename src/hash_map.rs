@@ -486,9 +486,8 @@ mod tests {
     // Open bug: `find_bucket` stops at the first tombstone, so re-inserting a key
     // whose slot was tombstoned writes a duplicate instead of finding the existing
     // entry further along the probe chain (see tasks.md / HASHMAP.md gap #2).
-    // Ignored until `find_bucket`'s insert probe is fixed to remember the first
-    // tombstone but keep scanning for a match.
-    #[ignore = "open bug: insert stops at first tombstone -> duplicate; see HASHMAP.md gap #2"]
+    // This test currently FAILS on purpose until `find_bucket`'s insert probe is
+    // fixed to remember the first tombstone but keep scanning for a match.
     #[test]
     fn reinsert_after_delete_does_not_duplicate() {
         let mut map = Table::init(8);

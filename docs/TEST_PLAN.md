@@ -1,14 +1,15 @@
 # rlox — Test Plan
 
-Current state: **18 tests passing, 1 `#[ignore]`d** (open reinsert-tombstone bug), 0 failing
-— now includes end-to-end VM tests (`arithmetic_precedence`, `scoping_regression`,
-`concat_string_equality`) via output capture
+Current state: **18 tests passing, 1 failing** (`reinsert_after_delete_does_not_duplicate` — the
+open tombstone bug, intentionally left red as a reminder rather than ignored). Now includes
+end-to-end VM tests (`arithmetic_precedence`, `scoping_regression`, `concat_string_equality`) via
+output capture.
 (`hash_map.rs`, `hasher.rs`, `memory.rs`). Still nothing tests the scanner, compiler, VM behavior,
 or metrics. This plan builds
 coverage in layers, cheapest and highest-value first, and turns every bug in
 [`tasks.md`](../tasks.md) into a regression test.
 
-Legend: ✅ implemented · ⬜ todo · 🚫 written but `#[ignore]`d (open bug) · ⏸ blocked on refactor.
+Legend: ✅ implemented · ⬜ todo · 🔴 written and currently failing (open bug, left red on purpose) · ⏸ blocked on refactor.
 
 ---
 
@@ -59,10 +60,10 @@ Direct tests of individual modules. Fast, no interpreter needed.
   `get_mut(missing).is_none()` and `get_mut(present).is_some()`.
 - ✅ **resizes at the load factor** (`resizes_when_load_factor_exceeded`). Insert 8 distinct keys into
   `Table::init(10)` (80% > 70%); *expect* `capacity > 10`. Was red before the cross-multiply fix.
-- 🚫 **re-insert after delete must not duplicate** (`reinsert_after_delete_does_not_duplicate`,
-  `#[ignore]`d — open bug). `insert(A); insert(B)` (collide); `delete(A)`; `insert(B, new)`;
+- 🔴 **re-insert after delete must not duplicate** (`reinsert_after_delete_does_not_duplicate` —
+  failing on purpose, open bug). `insert(A); insert(B)` (collide); `delete(A)`; `insert(B, new)`;
   *expect* `size == 1`. *Currently* `find_bucket` stops at the tombstone and writes a duplicate, so
-  `size` becomes `2`. Un-ignore when HASHMAP.md gap #2 is fixed.
+  `size` becomes `2`. Goes green when HASHMAP.md gap #2 is fixed.
 
 ### scanner
 - ⬜ **keyword vs identifier.** *Given* source `"var x"`, scan tokens. *Expect* `[Var, Identifier,
