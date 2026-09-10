@@ -325,7 +325,7 @@ where
                 // It mostly works because interning guarantees equal strings
                 // share one pointer — but keys inserted from distinct pointers
                 // with equal content would not be recognised as the same.
-                if memory::eq(existing.ptr, key.ptr) {
+                if existing.ptr.eq(&key.ptr) {
                     false
                 } else {
                     true
@@ -350,9 +350,9 @@ mod tests {
     use super::*;
     use crate::hasher::hash;
 
-    fn create_fat_ptr(value: &mut &str) -> FatPointer {
+    fn create_fat_ptr(value: &mut String) -> FatPointer {
         FatPointer {
-            ptr: value.to_string().as_mut_ptr(),
+            ptr: value.as_mut_ptr(),
             size: value.len(),
             hash: hash(value),
         }
@@ -362,8 +362,9 @@ mod tests {
     #[test]
     fn can_hold_multiple_keys() {
         let mut map = Table::init(2);
-        let one = create_fat_ptr(&mut "one");
-        let two = create_fat_ptr(&mut "two");
+        let (mut one_s, mut two_s) = (String::from("one"), String::from("two"));
+        let one = create_fat_ptr(&mut one_s);
+        let two = create_fat_ptr(&mut two_s);
 
         map.insert(one, true);
         map.insert(two, true);
@@ -375,12 +376,14 @@ mod tests {
     #[test]
     fn can_hold_multiple_keys_multiple_tables() {
         let mut map = Table::init(2);
-        let one = create_fat_ptr(&mut "one");
-        let two = create_fat_ptr(&mut "two");
+        let (mut one_s, mut two_s) = (String::from("one"), String::from("two"));
+        let one = create_fat_ptr(&mut one_s);
+        let two = create_fat_ptr(&mut two_s);
 
         let mut map2: Table<bool> = Table::init(2);
-        let one2 = create_fat_ptr(&mut "one");
-        let two2 = create_fat_ptr(&mut "two");
+        let (mut one2_s, mut two2_s) = (String::from("one"), String::from("two"));
+        let one2 = create_fat_ptr(&mut one2_s);
+        let two2 = create_fat_ptr(&mut two2_s);
 
         map.insert(one.clone(), true);
         map.insert(two, true);
@@ -397,8 +400,9 @@ mod tests {
     #[test]
     fn can_hold_and_return_multiple_keys() {
         let mut map = Table::init(2);
-        let one = create_fat_ptr(&mut "one");
-        let two = create_fat_ptr(&mut "two");
+        let (mut one_s, mut two_s) = (String::from("one"), String::from("two"));
+        let one = create_fat_ptr(&mut one_s);
+        let two = create_fat_ptr(&mut two_s);
 
         map.insert(one.clone(), true);
         map.insert(two.clone(), false);
@@ -412,8 +416,9 @@ mod tests {
     #[test]
     fn can_hold_and_delete_multiple_keys() {
         let mut map = Table::init(2);
-        let one = create_fat_ptr(&mut "one");
-        let two = create_fat_ptr(&mut "two");
+        let (mut one_s, mut two_s) = (String::from("one"), String::from("two"));
+        let one = create_fat_ptr(&mut one_s);
+        let two = create_fat_ptr(&mut two_s);
 
         map.insert(one.clone(), true);
         map.insert(two.clone(), false);
@@ -427,9 +432,11 @@ mod tests {
     #[test]
     fn can_expand_capacity_as_required() {
         let mut map = Table::init(1);
-        let one = create_fat_ptr(&mut "one");
-        let two = create_fat_ptr(&mut "two");
-        let _three = create_fat_ptr(&mut "three");
+        let (mut one_s, mut two_s, mut three_s) =
+            (String::from("one"), String::from("two"), String::from("three"));
+        let one = create_fat_ptr(&mut one_s);
+        let two = create_fat_ptr(&mut two_s);
+        let _three = create_fat_ptr(&mut three_s);
 
         map.insert(one.clone(), true);
         assert_eq!(map.capacity, 3);
@@ -447,7 +454,8 @@ mod tests {
     fn can_handle_reference() {
         let mut map = Table::init(1);
         let value = TestValue { id: 1 };
-        let one = create_fat_ptr(&mut "one");
+        let mut one_s = String::from("one");
+        let one = create_fat_ptr(&mut one_s);
         {
             map.insert(one.clone(), value);
             let existing = map.get_mut(one.clone());
@@ -462,7 +470,8 @@ mod tests {
     #[test]
     fn insert_overwrite_keeps_correct_size() {
         let mut map = Table::init(2);
-        let one = create_fat_ptr(&mut "one");
+        let mut one_s = String::from("one");
+        let one = create_fat_ptr(&mut one_s);
         map.insert(one.clone(), 1);
         map.insert(one, 2);
         assert_eq!(map.size, 1);
@@ -507,8 +516,9 @@ mod tests {
     #[test]
     fn find_entry_mut_should_not_panic_for_missing_key() {
         let mut map = Table::init(8);
-        let one = create_fat_ptr(&mut "one");
-        let missing = create_fat_ptr(&mut "missing");
+        let (mut one_s, mut missing_s) = (String::from("one"), String::from("missing"));
+        let one = create_fat_ptr(&mut one_s);
+        let missing = create_fat_ptr(&mut missing_s);
         map.insert(one.clone(), 1);
         assert!(map.get_mut(missing).is_none());
         assert!(map.get_mut(one).is_some());

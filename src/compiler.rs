@@ -1408,7 +1408,7 @@ impl<'c> Compiler<'c> {
         let token = self.parser.previous.unwrap();
 
         let str_value = if token.token_type == TokenType::String {
-            self.source[token.start + 1.. token.start + token.length - 1].to_owned()
+            self.source[token.start + 1..token.start + token.length - 1].to_owned()
         } else {
             self.token_name(token).to_owned()
         };

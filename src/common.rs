@@ -311,7 +311,7 @@ impl PartialEq for FatPointer {
         // at compile time so equal literals share one pointer; strings built at
         // runtime (e.g. via `+`) are fresh allocations and will mis-compare.
         if matches!(self, _other) {
-           return self.ptr == other.ptr && self.size == other.size && self.hash == other.hash;
+           return self.ptr == other.ptr;
         }
         false
     }
