@@ -68,13 +68,13 @@ Priority key: 🔴 critical (memory safety / crashes / wrong results) · 🟠 co
   lookup that establishes the one-pointer-per-string invariant. (Valid because every string,
   literals and `concat` results, is interned.)
 
-- [ ] **Insert stops at first tombstone → duplicate key** — `hash_map.rs`. `find_bucket` (used by
-  `insert`) treats a tombstone as a stopping point, so re-inserting a key whose slot was tombstoned
-  writes a second copy instead of finding the existing entry further down the probe chain (`size`
-  drifts up). *Fix:* an insert probe that remembers the first tombstone but keeps scanning until it
-  finds the key (overwrite) or a `Vacant` (insert, reusing the remembered tombstone). Caught by the
-  failing `reinsert_after_delete_does_not_duplicate` test. (`delete` shares `find_bucket` and has
-  the same flaw for keys past a tombstone — fix together.)
+- [x] **Insert/delete stopped at first tombstone → duplicate key** — fixed. `insert` now uses
+  `find_bucket_to_insert`, which remembers the first tombstone but keeps scanning until it finds the
+  key (overwrite) or a `Vacant` (insert, reusing the tombstone) — so no duplicate. `delete` now uses
+  `find_entry_index` (the lookup probe that skips tombstones), so it no longer misses a key past a
+  tombstone and returns `None` for absent keys instead of panicking. `find_bucket` remains only for
+  `ensure_capacity`'s tombstone-free rehash. Covered by `reinsert_after_delete_does_not_duplicate`
+  (now passing).
 
 - [ ] **Dead comparison: `arity >= 255`** — `compiler.rs::function`. `arity` is `u8` (max 255), and
   it's incremented *before* the check, so the guard can't work and a 256th parameter overflows.

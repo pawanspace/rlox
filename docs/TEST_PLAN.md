@@ -1,7 +1,6 @@
 # rlox — Test Plan
 
-Current state: **18 tests passing, 1 failing** (`reinsert_after_delete_does_not_duplicate` — the
-open tombstone bug, intentionally left red as a reminder rather than ignored). Now includes
+Current state: **19 tests passing, 0 failing**. Now includes
 end-to-end VM tests (`arithmetic_precedence`, `scoping_regression`, `concat_string_equality`) via
 output capture.
 (`hash_map.rs`, `hasher.rs`, `memory.rs`). Still nothing tests the scanner, compiler, VM behavior,
@@ -9,7 +8,7 @@ or metrics. This plan builds
 coverage in layers, cheapest and highest-value first, and turns every bug in
 [`tasks.md`](../tasks.md) into a regression test.
 
-Legend: ✅ implemented · ⬜ todo · 🔴 written and currently failing (open bug, left red on purpose) · ⏸ blocked on refactor.
+Legend: ✅ implemented · ⬜ todo · ⏸ blocked on refactor.
 
 ---
 
@@ -60,10 +59,9 @@ Direct tests of individual modules. Fast, no interpreter needed.
   `get_mut(missing).is_none()` and `get_mut(present).is_some()`.
 - ✅ **resizes at the load factor** (`resizes_when_load_factor_exceeded`). Insert 8 distinct keys into
   `Table::init(10)` (80% > 70%); *expect* `capacity > 10`. Was red before the cross-multiply fix.
-- 🔴 **re-insert after delete must not duplicate** (`reinsert_after_delete_does_not_duplicate` —
-  failing on purpose, open bug). `insert(A); insert(B)` (collide); `delete(A)`; `insert(B, new)`;
-  *expect* `size == 1`. *Currently* `find_bucket` stops at the tombstone and writes a duplicate, so
-  `size` becomes `2`. Goes green when HASHMAP.md gap #2 is fixed.
+- ✅ **re-insert after delete must not duplicate** (`reinsert_after_delete_does_not_duplicate`).
+  `insert(A); insert(B)` (collide); `delete(A)`; `insert(B, new)`; `size` stays `1`. Fixed:
+  `find_bucket_to_insert` scans past the tombstone and updates B in place.
 
 ### scanner
 - ⬜ **keyword vs identifier.** *Given* source `"var x"`, scan tokens. *Expect* `[Var, Identifier,
@@ -105,7 +103,7 @@ can't silently regress.
 - ⬜ `static mut` metrics → **not yet covered** (see the metrics test below).
 - ⬜ local scoping (fixed in code) → needs Layer 3 (e2e) to assert program output; the concrete
   case is under Layer 3.
-- ⬜ remaining open bugs (reinsert-past-tombstone duplicate, arity abort, dead comparisons)
+- ⬜ remaining open bugs (arity abort, dead comparisons)
   → one `#[ignore]`d test each, flipped to green as the bug is fixed.
 
 ### metrics

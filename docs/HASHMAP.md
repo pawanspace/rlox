@@ -154,21 +154,17 @@ only accidentally correct while interning happens to hold — which is exactly t
   pointer comparison too, so insert and lookup agree on "same key." `find_entry_with_value` stays
   content-based on purpose (it's the interning lookup). Valid because every string — literals and
   `concat` results — is interned (Option A from §4).
+- Insert and delete no longer mishandle tombstones: `insert` uses `find_bucket_to_insert` (remembers
+  the first tombstone but keeps scanning for the key, so no duplicate); `delete` uses
+  `find_entry_index` (skips tombstones, returns `None` for absent keys instead of panicking).
+  `find_bucket` is now used only by `ensure_capacity`'s tombstone-free rehash. Verified by
+  `reinsert_after_delete_does_not_duplicate`.
 
 ### ❌ Open gaps
 
-1. **Insert stops at the first tombstone → duplicate keys + `size` drift.** `find_bucket` uses
-   `is_occupied`, which returns `false` for a `TombStone`, so the insert probe *stops* at the first
-   tombstone instead of continuing to check whether the key already exists further along. Repro:
-   ```
-   insert(A); insert(B)   // A and B collide; B probes to the next slot
-   delete(A)              // tombstone in A's slot
-   insert(B, new)         // stops at the tombstone -> writes a 2nd copy of B; size++ again
-   ```
-   Fix: implement the insert-probe from §3 (remember first tombstone, keep scanning for a match to
-   `Vacant`, then place at the tombstone). The `reinsert_after_delete_does_not_duplicate` test is
-   currently failing on purpose until this is fixed. (`delete` shares `find_bucket` and has the same
-   flaw for keys past a tombstone — fix together.)
+_None currently tracked for the hash table._ (Possible hardening, not bugs: tombstones don't count
+toward the load factor, so a heavily churned table could accumulate them; and `find_bucket_to_insert`
+records the *last* tombstone rather than the first.)
 
 ### Related (outside this file) — resolved
 - **Computed-string equality** (`common.rs`): fixed. Equality is pointer identity, and `concat` now
@@ -177,11 +173,12 @@ only accidentally correct while interning happens to hold — which is exactly t
 
 ---
 
-## 6. Suggested fix order (remaining)
+## 6. Remaining work
 
-1. Rewrite the insert-probe (§3) so it can never duplicate and it reuses tombstones (gap #1); then
-   the `reinsert_after_delete_does_not_duplicate` test goes green. Fix `delete`'s shared use of
-   `find_bucket` at the same time.
+No known correctness bugs. Optional hardening if you keep building on this:
+- Count tombstones toward the load factor (or reclaim them) so a churned table can't fill with
+  tombstones and leave no `Vacant`.
+- Have `find_bucket_to_insert` reuse the *first* tombstone rather than the last (shorter probes).
 
-Each fix should get a regression test (see [`TEST_PLAN.md`](TEST_PLAN.md)); force collisions in
-tests by constructing `FatPointer`s with equal `hash` fields but distinct `ptr`/`size`.
+New tests should force collisions by constructing `FatPointer`s with equal `hash` fields but
+distinct backing storage (see [`TEST_PLAN.md`](TEST_PLAN.md)).

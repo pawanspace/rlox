@@ -102,7 +102,7 @@ where
     /// `Occupied` (i.e. this was an overwrite of an existing key).
     pub(crate) fn insert(&mut self, key: FatPointer, value: T) -> bool {
         self.ensure_capacity();
-        let bucket = self.find_bucket(&key, &self.entries);
+        let bucket = self.find_bucket_to_insert(&key, &self.entries);
         // `new_value` is true when the slot was already Occupied — i.e. this
         // insert is an *overwrite* of an existing key, not a new entry.
         let new_value = matches!(&self.entries[bucket], Entry::Occupied(_, _));
@@ -115,6 +115,9 @@ where
         }
         new_value
     }
+
+
+
 
     /// Look up `key`; return `Some(&value)` if present, else `None`.
     pub(crate) fn get(&self, key: FatPointer) -> Option<&T> {
@@ -142,13 +145,18 @@ where
     /// Deletion replaces the slot with a `TombStone` (not `Vacant`) so probe
     /// chains through this bucket stay intact — see the module docs.
     pub(crate) fn delete(&mut self, key: FatPointer) -> Option<T> {
-        let bucket = self.find_bucket(&key, &self.entries);
-        let value = self.get_at_index(bucket);
-        if value.is_some() {
-            self.insert_tombstone(bucket);
-            self.size -= 1;
+        let bucket = self.find_entry_index(&key);
+        match bucket {
+            Some(bucket) => {
+                let value = self.get_at_index(bucket);
+                if value.is_some() {
+                    self.insert_tombstone(bucket);
+                    self.size -= 1;
+                }
+                value
+            }
+            None => None
         }
-        value
     }
 
     /// Overwrite bucket `bucket` with a `TombStone` marker.
@@ -200,17 +208,14 @@ where
         }
     }
 
-    /// Find the bucket index where `key` should live: start at
-    /// `hash % capacity`, then probe forward while the slot is "occupied by a
-    /// *different* key" until a usable slot is found.
+    /// Probe forward from `hash % capacity` to the first non-`Occupied`-by-a-
+    /// different-key slot. Now used only by `ensure_capacity`'s rehash, which
+    /// re-inserts into a fresh, larger, tombstone-free array — so it always hits
+    /// a `Vacant` and never loops forever. (Insertion into the live table uses
+    /// `find_bucket_to_insert`, which handles tombstones correctly.)
     fn find_bucket(&self, key: &FatPointer, entries: &Vec<Entry<T>>) -> usize {
         let mut bucket = key.hash % (self.capacity as u32);
 
-        // BUG: this loop only stops when `is_occupied` returns false — i.e. at a
-        // Vacant/TombStone slot, or the same key. If the table were completely
-        // full of *different* keys with no empty slot, this would loop forever.
-        // In practice `ensure_capacity` (mis)fires just before full, so it is
-        // usually avoided — but it is not robust.
         while self.is_occupied(bucket, key, entries) {
             // `+ 1` moves to the next slot; `% capacity` wraps back to 0 at the
             // end so the probe is circular.
@@ -219,6 +224,35 @@ where
 
         bucket as usize
     }
+
+
+    fn find_bucket_to_insert(&self, key: &FatPointer, entries: &Vec<Entry<T>>) -> usize {
+        let mut bucket = key.hash % (self.capacity as u32);
+
+        let mut tombstone_index: i32 = -1;
+
+        loop {
+            let entry = &entries[bucket as usize];
+            match entry {
+                Entry::Occupied(existing, _) => {
+                    if existing.eq(key) {
+                        return bucket as usize;
+                    }
+                },
+                Entry::TombStone => tombstone_index = bucket as i32,
+                Entry::Vacant => break
+            }
+            // `+ 1` moves to the next slot; `% capacity` wraps back to 0 at the
+            // end so the probe is circular.
+            bucket = (bucket + 1) % (self.capacity as u32);
+        }
+
+        if tombstone_index != -1 {
+            return tombstone_index as usize;
+        }
+        bucket as usize
+    }
+
 
     /// Debug helper: print the whole bucket array.
     pub(crate) fn dump(&self) {
@@ -321,17 +355,17 @@ where
                 // Match by pointer identity — the same notion of "same key" that
                 // `find_entry_index` (via `FatPointer::eq`) uses, valid because
                 // every string is interned to one canonical pointer.
-                if existing.ptr.eq(&key.ptr) {
+                if existing.eq(key) {
                     false
                 } else {
                     true
                 }
             }
-            // BUG (gap #1): treating a tombstone as a stopping point means the
-            // insert probe stops here instead of scanning on to see whether the
-            // key already exists further along — so re-inserting after a delete
-            // can create a duplicate. See HASHMAP.md gap #1 /
-            // reinsert_after_delete_does_not_duplicate.
+            // Stop probing at a Vacant or TombStone. This is only reached via
+            // the rehash path now (fresh table has no tombstones), so stopping
+            // at a tombstone is harmless here. Live insertion uses
+            // `find_bucket_to_insert`, which scans past tombstones so it can't
+            // create a duplicate.
             Entry::Vacant | Entry::TombStone => false,
         }
     }
@@ -490,11 +524,10 @@ mod tests {
         assert_eq!(map.get(b), Some(&2));
     }
 
-    // Open bug: `find_bucket` stops at the first tombstone, so re-inserting a key
-    // whose slot was tombstoned writes a duplicate instead of finding the existing
-    // entry further along the probe chain (see tasks.md / HASHMAP.md gap #2).
-    // This test currently FAILS on purpose until `find_bucket`'s insert probe is
-    // fixed to remember the first tombstone but keep scanning for a match.
+    // Regression test for the tombstone-duplicate bug: after deleting A, re-inserting
+    // B (whose slot was reached by probing past A) must update B in place, not write a
+    // second copy. `find_bucket_to_insert` scans past the tombstone to find the existing
+    // B, so `size` stays 1.
     #[test]
     fn reinsert_after_delete_does_not_duplicate() {
         let mut map = Table::init(8);
