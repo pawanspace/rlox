@@ -1406,7 +1406,13 @@ impl<'c> Compiler<'c> {
     /// Extract the previous token's text (owned) and its hash, for interning.
     fn prev_token_to_string(& self) -> (String, u32) {
         let token = self.parser.previous.unwrap();
-        let str_value = self.token_name(token).to_owned();
+
+        let str_value = if token.token_type == TokenType::String {
+            self.source[token.start + 1.. token.start + token.length - 1].to_owned()
+        } else {
+            self.token_name(token).to_owned()
+        };
+
         let hash_value = hasher::hash(&str_value);
         (str_value, hash_value)
     }
