@@ -122,6 +122,7 @@ impl CallFrame {
 
 /// Outcome of running a program. The caller (`main`/REPL) uses this to decide
 /// process exit codes. Mirrors clox's `InterpretResult`.
+#[derive(Debug, Clone, PartialOrd, PartialEq)]
 pub enum InterpretResult {
     InterpretOk,
     InterpretCompileError,
@@ -696,8 +697,9 @@ impl VM {
                                 "Expected: {:?} arguments but received: {:?}",
                                 function.arity, arg_count
                             )
-                            .as_str(),
+                                .as_str(),
                         );
+                        return false;
                     }
                     self.create_call_frame(function, arg_count);
                     return true;
@@ -712,6 +714,7 @@ impl VM {
                             )
                             .as_str(),
                         );
+                        return false;
                     }
                     self.create_call_frame(function, arg_count);
                     return true;
@@ -889,25 +892,28 @@ impl VM {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn run(src: &str) -> Vec<String> {
+    fn run(src: &str) -> (InterpretResult, Vec<String>) {
         let mut vm = VM::init();
-        vm.interpret(src.to_string());
-        vm.output.clone()
+        vm.interpret(src.to_string())
     }
 
     #[test] fn arithmetic_precedence() {
-        assert_eq!(run("print 1 + 2 * 3;"), ["7"]);
+        assert_eq!(run("print 1 + 2 * 3;").1, ["7"]);
     }
 
     // Guards the fixed local-scoping bug end-to-end.
     #[test] fn scoping_regression() {
         let src = "var i = 10; while (i < 15) { i = i + 1; } \
                    for (var i = 8; i < 10; i = i + 1) {} print i;";
-        assert_eq!(run(src), ["15"]);
+        assert_eq!(run(src).1, ["15"]);
     }
 
     // The concat / string-equality bug: red today, green once concat interns.
     #[test] fn concat_string_equality() {
-        assert_eq!(run(r#"print "a" + "b" == "ab";"#), ["true"]);
+        assert_eq!(run(r#"print "a" + "b" == "ab";"#).1, ["true"]);
+    }
+
+    #[test] fn arity_mismatch_should_result_in_errors() {
+        assert_eq!(run("fun add(a, b) { return a + b; } add(1);").0, InterpretResult::InterpretRuntimeError);
     }
 }

@@ -1,6 +1,6 @@
 # rlox — Test Plan
 
-Current state: **19 tests passing, 0 failing**. Now includes
+Current state: **20 tests passing, 0 failing**. Now includes
 end-to-end VM tests (`arithmetic_precedence`, `scoping_regression`, `concat_string_equality`) via
 output capture.
 (`hash_map.rs`, `hasher.rs`, `memory.rs`). Still nothing tests the scanner, compiler, VM behavior,
@@ -103,7 +103,9 @@ can't silently regress.
 - ⬜ `static mut` metrics → **not yet covered** (see the metrics test below).
 - ⬜ local scoping (fixed in code) → needs Layer 3 (e2e) to assert program output; the concrete
   case is under Layer 3.
-- ⬜ remaining open bugs (arity abort, dead comparisons)
+- ✅ arity mismatch aborts → `arity_mismatch_should_result_in_errors` (calling with the wrong arg
+  count returns `InterpretRuntimeError`).
+- ⬜ remaining open bugs (dead comparisons)
   → one `#[ignore]`d test each, flipped to green as the bug is fixed.
 
 ### metrics
@@ -142,8 +144,9 @@ Once unblocked (each: run the source, assert the captured output):
   → `2`).
 - ⬜ **closures** (once Chapter 25 runtime is finished): a counter closure captures and mutates an
   upvalue across calls → `1`, `2`, `3`.
-- ⬜ **runtime errors** surface as an error result (not a silent log): calling with the wrong arg
-  count, or `-"x"`, yields `InterpretRuntimeError` and no bogus output.
+- ⬜ **runtime errors** surface as an error result (not a silent log): arity mismatch is done
+  (`arity_mismatch_should_result_in_errors`); other cases (e.g. `-"x"` type errors) still to cover,
+  and `runtime_error` itself still only logs rather than resetting the stack / reporting.
 
 ---
 

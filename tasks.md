@@ -18,24 +18,18 @@ Priority key: 🔴 critical (memory safety / crashes / wrong results) · 🟠 co
 - [x] **`static mut EVENTS` is unsound** — fixed. Now `static EVENTS: OnceLock<Mutex<HashMap<..>>>`
   with `get_or_init` + `lock`; removed `static mut`, `init_events`, and all `unsafe`.
 
-- [ ] **Allocated string memory is never freed** — `memory.rs`. Every interned/concatenated
-  string leaks. Acceptable for now; real fix is Chapter 26 (GC) or switching to owned types.
+_(The critical items are resolved. Remaining chapter-level work — garbage collection, and finishing
+closures — is tracked as Crafting Interpreters chapter progress in [ARCHITECTURE.md](docs/ARCHITECTURE.md),
+not here.)_
 
 ---
 
 ## 🟠 Correctness
 
-- [ ] **Closures don't run (Chapter 25 incomplete)** — `vm.rs`.
-  - `OpCode::Closure` reads only the function constant and does not consume the `is_local`/`index`
-    upvalue operand bytes the compiler emits → instruction pointer misaligns.
-  - No `GetUpValue` / `SetUpValue` match arms → they hit the catch-all `_` and silently halt the VM.
-  - No runtime `ObjUpvalue`, no open/closed capture.
-  *Fix:* implement the runtime upvalue model (consume operands in `Closure`, add the two opcodes,
-  capture from the enclosing frame's stack).
-
-- [ ] **Arity mismatch doesn't abort** — `vm.rs::execute_function`. On wrong argument count it
-  calls `runtime_error` (which only logs) then proceeds to build the call frame anyway.
-  *Fix:* return an error / stop execution.
+- [x] **Arity mismatch doesn't abort** — fixed. `execute_function` now `return false` on a wrong
+  argument count (both the `Fun` and `Closure` arms), so the `Call` opcode returns
+  `InterpretRuntimeError` instead of building a call frame with a misaligned stack. Covered by
+  `arity_mismatch_should_result_in_errors`.
 
 - [ ] **`runtime_error` only logs** — `vm.rs`. It prints via `debug::info` but doesn't reset the
   stack or surface a real error to the caller. *Fix:* proper error propagation + stack trace.
