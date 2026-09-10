@@ -679,12 +679,10 @@ impl VM {
 
     /// Set up a call: find the callee on the stack (at `peek(distance)`, i.e.
     /// below its arguments), verify it's callable, and create its `CallFrame`.
-    /// Returns `false` if the callee isn't a function/closure.
-    ///
-    /// NOTE: the arity check reports a mismatch via `runtime_error` but does
-    /// *not* return `false` / abort — it falls through and creates the frame
-    /// anyway. So calling a function with the wrong number of arguments is
-    /// logged but not actually prevented.
+    /// Returns `false` if the callee isn't a function/closure, or if the
+    /// argument count doesn't match the function's arity — in which case the
+    /// `Call` opcode turns that `false` into an `InterpretRuntimeError` rather
+    /// than building a frame with a misaligned stack.
     fn execute_function(&mut self, distance: usize, arg_count: u8) -> bool {
         let callee = self.peek(distance);
         if callee.as_ref().unwrap().is_obj() {
@@ -908,7 +906,8 @@ mod tests {
         assert_eq!(run(src).1, ["15"]);
     }
 
-    // The concat / string-equality bug: red today, green once concat interns.
+    // Regression test for string concat + equality: `concat` interns its result
+    // (and literals are unquoted), so a computed string equals the matching literal.
     #[test] fn concat_string_equality() {
         assert_eq!(run(r#"print "a" + "b" == "ab";"#).1, ["true"]);
     }
