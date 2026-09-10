@@ -40,20 +40,14 @@ Priority key: 🔴 critical (memory safety / crashes / wrong results) · 🟠 co
 - [ ] **`runtime_error` only logs** — `vm.rs`. It prints via `debug::info` but doesn't reset the
   stack or surface a real error to the caller. *Fix:* proper error propagation + stack trace.
 
-- [ ] **String literals keep their surrounding quotes** — `compiler.rs`. The scanner's `String`
-  token spans the whole lexeme *including* both `"` delimiters, and `token_name`/
-  `prev_token_to_string` use the full span, so `"a"` is stored/interned as the 3 bytes `"a"` (quotes
-  included), not `a`. This corrupts every string operation: `print "x";` shows the quotes, and
-  `"a" + "b"` yields `"a""b"` rather than `ab`. *Fix:* for a `String` token, extract
-  `source[start+1 .. start+length-1]` (strip the delimiters) when building the string value.
-  (Blocks the `concat_string_equality` test.)
+- [x] **String literals keep their surrounding quotes** — fixed. `prev_token_to_string` now strips
+  the `"` delimiters for `String` tokens (`source[start+1 .. start+length-1]`), leaving identifiers
+  and other tokens on the full lexeme. `print "x";` prints `x`, and `"a" + "b"` yields `ab`.
 
-- [ ] **Computed-string equality is pointer identity** — `common.rs` (`Value`/`Obj`/`FatPointer`
-  `PartialEq`). Compares by pointer. `concat` now interns its result (reuses the existing pointer
-  for identical content), which is the intended fix — but `"a" + "b" == "ab"` still returns `false`
-  until the quote-stripping bug above is fixed (the contents genuinely differ: `"a""b"` vs `"ab"`).
-  Once quotes are stripped, interning makes this pass; otherwise switch equality to compare by
-  content/hash.
+- [x] **Computed-string equality** — fixed (in combination). `concat` interns its result and string
+  literals no longer carry quotes, so `"a" + "b"` produces the same interned pointer as the literal
+  `ab` and `==` returns `true`. Covered by the now-passing `concat_string_equality` test. (Equality
+  is still pointer-based, which is correct *given* universal interning — see HASHMAP.md §4.)
 
 - [x] **`get_mut` panics on absent keys** — fixed. `get_mut` now matches the `Option` from
   `find_entry_mut` instead of `.unwrap()`, so a missing key returns `None`. Covered by

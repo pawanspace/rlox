@@ -1,6 +1,8 @@
 # rlox — Test Plan
 
-Current state: **15 tests passing, 1 `#[ignore]`d** (open reinsert-tombstone bug), 0 failing
+Current state: **18 tests passing, 1 `#[ignore]`d** (open reinsert-tombstone bug), 0 failing
+— now includes end-to-end VM tests (`arithmetic_precedence`, `scoping_regression`,
+`concat_string_equality`) via output capture
 (`hash_map.rs`, `hasher.rs`, `memory.rs`). Still nothing tests the scanner, compiler, VM behavior,
 or metrics. This plan builds
 coverage in layers, cheapest and highest-value first, and turns every bug in
