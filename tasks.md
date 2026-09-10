@@ -62,10 +62,19 @@ Priority key: 🔴 critical (memory safety / crashes / wrong results) · 🟠 co
   genuinely new key (`if !new_value`), so overwrites no longer drift the count. Covered by
   `insert_overwrite_keeps_correct_size`.
 
-- [ ] **Inconsistent key matching** — `hash_map.rs`. `is_occupied` matches by pointer (`memory::eq`)
-  while `find_entry_index` uses `FatPointer::eq` and `find_entry_with_value` uses string content;
-  `is_occupied` also treats a tombstone as free, so a duplicate key can be inserted ahead of an
-  existing one. *Fix:* one consistent match rule; probe past tombstones when checking existence.
+- [x] **Inconsistent key matching** — fixed. Key comparison is now pointer identity everywhere it
+  means "same key": `FatPointer::eq` compares pointers only, and `is_occupied` uses pointer
+  comparison too. `find_entry_with_value` stays content-based on purpose — it's the interning
+  lookup that establishes the one-pointer-per-string invariant. (Valid because every string,
+  literals and `concat` results, is interned.)
+
+- [ ] **Insert stops at first tombstone → duplicate key** — `hash_map.rs`. `find_bucket` (used by
+  `insert`) treats a tombstone as a stopping point, so re-inserting a key whose slot was tombstoned
+  writes a second copy instead of finding the existing entry further down the probe chain (`size`
+  drifts up). *Fix:* an insert probe that remembers the first tombstone but keeps scanning until it
+  finds the key (overwrite) or a `Vacant` (insert, reusing the remembered tombstone). Caught by the
+  failing `reinsert_after_delete_does_not_duplicate` test. (`delete` shares `find_bucket` and has
+  the same flaw for keys past a tombstone — fix together.)
 
 - [ ] **Dead comparison: `arity >= 255`** — `compiler.rs::function`. `arity` is `u8` (max 255), and
   it's incremented *before* the check, so the guard can't work and a 256th parameter overflows.

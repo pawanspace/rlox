@@ -150,6 +150,10 @@ only accidentally correct while interning happens to hold — which is exactly t
 - Load factor now applies: `ensure_capacity` cross-multiplies
   `(size + 1) * 100 > capacity * load_factor`, resizing at the 70% target (verified by
   `resizes_when_load_factor_exceeded`).
+- Key matching is consistent: `FatPointer::eq` compares pointers only, and `is_occupied` uses
+  pointer comparison too, so insert and lookup agree on "same key." `find_entry_with_value` stays
+  content-based on purpose (it's the interning lookup). Valid because every string — literals and
+  `concat` results — is interned (Option A from §4).
 
 ### ❌ Open gaps
 
@@ -162,29 +166,22 @@ only accidentally correct while interning happens to hold — which is exactly t
    insert(B, new)         // stops at the tombstone -> writes a 2nd copy of B; size++ again
    ```
    Fix: implement the insert-probe from §3 (remember first tombstone, keep scanning for a match to
-   `Vacant`, then place at the tombstone). Regression test `reinsert_after_delete_does_not_duplicate`
-   exists but is `#[ignore]`d until this is fixed.
+   `Vacant`, then place at the tombstone). The `reinsert_after_delete_does_not_duplicate` test is
+   currently failing on purpose until this is fixed. (`delete` shares `find_bucket` and has the same
+   flaw for keys past a tombstone — fix together.)
 
-2. **Inconsistent key matching (masked by interning).** Three different predicates are in use:
-   `is_occupied` matches by **pointer** (`memory::eq`); `find_entry_index` by **ptr+size+hash**
-   (`FatPointer::eq`); `find_entry_with_value` by **byte content**. They only agree because every
-   current key is interned (one pointer per content). The moment a non-interned `FatPointer` becomes
-   a key (e.g. a `concat` result), insert/lookup by pointer would fail to recognize a content-equal
-   key → duplicate inserts and missed lookups. Fix: adopt one scheme from §4 everywhere.
-
-### Related (outside this file)
-- **Computed-string equality** (`common.rs`): `Value`/`Obj`/`FatPointer` equality is pointer
-  identity, so `"a" + "b" == "ab"` is `false` because `concat` returns an un-interned string. Same
-  root as gap #2 — adopting design **A** (intern `concat`'s result) fixes both at once.
+### Related (outside this file) — resolved
+- **Computed-string equality** (`common.rs`): fixed. Equality is pointer identity, and `concat` now
+  interns its result (plus string literals no longer carry quotes), so `"a" + "b"` yields the same
+  interned pointer as the literal `ab` and `==` is `true`. This was design **A** from §4.
 
 ---
 
 ## 6. Suggested fix order (remaining)
 
-1. Decide the key-equality scheme (§4). Recommended: **A** — intern `concat`'s result, then make all
-   probe paths compare by pointer. This closes gap #2 and the computed-string-equality bug together.
-2. Rewrite the insert-probe (§3) so it can never duplicate and it reuses tombstones (gap #1); then
-   un-`#[ignore]` `reinsert_after_delete_does_not_duplicate`.
+1. Rewrite the insert-probe (§3) so it can never duplicate and it reuses tombstones (gap #1); then
+   the `reinsert_after_delete_does_not_duplicate` test goes green. Fix `delete`'s shared use of
+   `find_bucket` at the same time.
 
 Each fix should get a regression test (see [`TEST_PLAN.md`](TEST_PLAN.md)); force collisions in
 tests by constructing `FatPointer`s with equal `hash` fields but distinct `ptr`/`size`.
