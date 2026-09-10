@@ -40,9 +40,19 @@ Priority key: 🔴 critical (memory safety / crashes / wrong results) · 🟠 co
 - [ ] **`runtime_error` only logs** — `vm.rs`. It prints via `debug::info` but doesn't reset the
   stack or surface a real error to the caller. *Fix:* proper error propagation + stack trace.
 
+- [ ] **String literals keep their surrounding quotes** — `compiler.rs`. The scanner's `String`
+  token spans the whole lexeme *including* both `"` delimiters, and `token_name`/
+  `prev_token_to_string` use the full span, so `"a"` is stored/interned as the 3 bytes `"a"` (quotes
+  included), not `a`. This corrupts every string operation: `print "x";` shows the quotes, and
+  `"a" + "b"` yields `"a""b"` rather than `ab`. *Fix:* for a `String` token, extract
+  `source[start+1 .. start+length-1]` (strip the delimiters) when building the string value.
+  (Blocks the `concat_string_equality` test.)
+
 - [ ] **Computed-string equality is pointer identity** — `common.rs` (`Value`/`Obj`/`FatPointer`
-  `PartialEq`). Literals are interned so they share a pointer, but `concat` allocates fresh,
-  uninterned memory, so `"a" + "b" == "ab"` is `false`. *Fix:* intern in `concat`, or compare by
+  `PartialEq`). Compares by pointer. `concat` now interns its result (reuses the existing pointer
+  for identical content), which is the intended fix — but `"a" + "b" == "ab"` still returns `false`
+  until the quote-stripping bug above is fixed (the contents genuinely differ: `"a""b"` vs `"ab"`).
+  Once quotes are stripped, interning makes this pass; otherwise switch equality to compare by
   content/hash.
 
 - [x] **`get_mut` panics on absent keys** — fixed. `get_mut` now matches the `Option` from
