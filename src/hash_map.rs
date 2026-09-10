@@ -33,8 +33,8 @@
 //! As a hash table fills, probe chains get longer and lookups slow down. So
 //! once the fraction of used slots ("load factor") crosses a threshold, the
 //! table grows and re-inserts everything into a bigger array, shortening the
-//! chains. See `ensure_capacity` (and the BUG note there — this
-//! implementation's threshold math is broken).
+//! chains. See `ensure_capacity`, which resizes at the `load_factor` threshold
+//! via `(size + 1) * 100 > capacity * load_factor`.
 
 use crate::common::FatPointer;
 use crate::memory;
@@ -74,8 +74,8 @@ where
     /// (not on overwrite) and decremented by `delete`, so it tracks the true
     /// count of occupied slots.
     size: usize,
-    /// Resize threshold as a percentage (70 = grow at ~70% full). See the BUG
-    /// in `ensure_capacity`: the arithmetic never actually applies this value.
+    /// Resize threshold as a percentage (70 = grow at ~70% full). Applied by
+    /// `ensure_capacity` via `(size + 1) * 100 > capacity * load_factor`.
     load_factor: usize,
 }
 
@@ -318,22 +318,20 @@ where
     fn is_occupied(&self, bucket: u32, key: &FatPointer, entries: &Vec<Entry<T>>) -> bool {
         match &entries[bucket as usize] {
             Entry::Occupied(existing, _) => {
-                // NOTE: this matches by raw pointer ADDRESS (`memory::eq`),
-                // whereas `find_entry_index` matches by full `FatPointer`
-                // equality and `find_entry_with_value` matches by string
-                // content. These three notions of "same key" are inconsistent.
-                // It mostly works because interning guarantees equal strings
-                // share one pointer — but keys inserted from distinct pointers
-                // with equal content would not be recognised as the same.
+                // Match by pointer identity — the same notion of "same key" that
+                // `find_entry_index` (via `FatPointer::eq`) uses, valid because
+                // every string is interned to one canonical pointer.
                 if existing.ptr.eq(&key.ptr) {
                     false
                 } else {
                     true
                 }
             }
-            // A tombstone is treated as reusable here (probe stops), which is
-            // fine for insertion but is part of why the matching rules above
-            // must be read carefully.
+            // BUG (gap #1): treating a tombstone as a stopping point means the
+            // insert probe stops here instead of scanning on to see whether the
+            // key already exists further along — so re-inserting after a delete
+            // can create a duplicate. See HASHMAP.md gap #1 /
+            // reinsert_after_delete_does_not_duplicate.
             Entry::Vacant | Entry::TombStone => false,
         }
     }

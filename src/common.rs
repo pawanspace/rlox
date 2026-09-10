@@ -304,12 +304,14 @@ pub(crate) struct FatPointer {
 
 impl PartialEq for FatPointer {
     fn eq(&self, other: &Self) -> bool {
-        // BUG: same always-true `matches!(self, _other)` dead guard as `Value`.
-        // NOTE: equality compares the raw `ptr` (identity), so two `FatPointer`s
-        // pointing at separate allocations with identical bytes are "not equal".
-        // This only works because string *literals* are interned (deduplicated)
-        // at compile time so equal literals share one pointer; strings built at
-        // runtime (e.g. via `+`) are fresh allocations and will mis-compare.
+        // Equality is pointer identity: two `FatPointer`s are equal iff they
+        // point at the same address. This is correct because every string is
+        // interned to one canonical pointer — both literals (at compile time)
+        // and runtime results like `concat` (which now interns), so equal
+        // content always shares one pointer.
+        // BUG: the `matches!(self, _other)` guard below is always true (`_other`
+        // is a catch-all binding, not a comparison) — dead code that could be
+        // removed; the real logic is the `ptr ==` line.
         if matches!(self, _other) {
            return self.ptr == other.ptr;
         }
