@@ -95,16 +95,45 @@ Two things this guarantees:
 The table must use **one consistent notion of key equality** in every probe path (insert, lookup,
 delete). Two valid designs:
 
-- **A — clox model (recommended here):** intern *every* string, then compare keys by **pointer
-  identity**. Because interning guarantees one pointer per distinct content, "same pointer" ==
-  "same content," and comparison is a single pointer check (fastest). Requires: **every** string —
-  literals *and* computed results like `concat` — is interned before it can become a key.
-- **B — content equality:** compare keys by `hash == hash && size == size && bytes_equal(...)`.
-  The table is then self-correct regardless of interning; interning becomes just a storage
-  optimization. Slightly slower comparisons, no hidden invariant.
+### A — clox model (recommended here): intern everything, compare by pointer
+
+This is two coupled changes:
+
+1. **Intern *every* string, including computed ones.** Today `concat` allocates a fresh buffer and
+   returns a new `FatPointer` *without* putting it in the intern table — so `"a" + "b"` gets a brand
+   new pointer even if `"ab"` already exists. "Intern the result" means `concat` must mirror the
+   compiler's `string()` flow: **look the string up first** (`get_existing_string` →
+   `table.find_entry_with_value`, a content lookup) — if it's already there, **reuse that pointer**
+   (`reuse_existing_string`); only on a miss allocate + insert (`create_new_string`). Note
+   `create_new_string` is just the *miss* half — it always allocates and inserts, so calling it
+   without the lookup would itself create a duplicate. After this there is exactly **one pointer per
+   distinct string content**, regardless of how the string was produced.
+2. **Compare keys by pointer identity everywhere.** Once every string is interned, "same content"
+   and "same pointer" are the *same thing*, so all equality/probe paths (`is_occupied`,
+   `find_entry_index`, and `Value`/`Obj` equality) can compare the raw `ptr` — a single cheap
+   integer comparison — instead of the current mix of pointer / ptr+size+hash / byte-content checks.
+
+**Why this closes two bugs at once:**
+- *Gap #2 (inconsistent matching):* the paths disagree today only because a non-interned string
+  could have a different pointer for identical content. With universal interning, pointer comparison
+  *is* content comparison, so unifying on pointer identity is both consistent **and** correct.
+- *Computed-string equality* (`"a" + "b" == "ab"` is `false` today, see §5 "Related"): it's false
+  because `concat` gives `"ab"` a fresh pointer and `==` compares pointers. Once `concat` interns,
+  both `"ab"`s share one pointer and `==` returns `true`.
+
+**Cost / discipline:** interning must be *airtight* — if any code path ever creates a string key
+without interning it, pointer comparison silently breaks (a content-equal key compares unequal). A
+is fastest but depends on "every string is interned, always."
+
+### B — content equality: compare by bytes, interning optional
+
+Compare keys by `hash == hash && size == size && bytes_equal(...)`. The table is then self-correct
+regardless of interning; interning becomes just a storage optimization. Slightly slower comparisons
+(a byte compare on hash+size collisions), but there's no hidden invariant to maintain — a stray
+un-interned key can't corrupt it. Pick B if you don't want to guarantee airtight interning.
 
 Whichever is chosen, all paths must agree. Mixing them (pointer in one path, content in another) is
-only accidentally correct while interning happens to hold.
+only accidentally correct while interning happens to hold — which is exactly today's latent bug.
 
 ---
 
