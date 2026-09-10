@@ -1,11 +1,12 @@
 # rlox — Test Plan
 
-Current state: **11 tests passing, 0 failing** (`hash_map.rs`, `hasher.rs`, `memory.rs`). Still
-nothing tests the scanner, compiler, VM behavior, or metrics. This plan builds
+Current state: **15 tests passing, 1 `#[ignore]`d** (open reinsert-tombstone bug), 0 failing
+(`hash_map.rs`, `hasher.rs`, `memory.rs`). Still nothing tests the scanner, compiler, VM behavior,
+or metrics. This plan builds
 coverage in layers, cheapest and highest-value first, and turns every bug in
 [`tasks.md`](../tasks.md) into a regression test.
 
-Legend: ✅ implemented · ⬜ todo · 🔴 currently failing (open bug) · ⏸ blocked on refactor.
+Legend: ✅ implemented · ⬜ todo · 🚫 written but `#[ignore]`d (open bug) · ⏸ blocked on refactor.
 
 ---
 
@@ -49,10 +50,17 @@ Direct tests of individual modules. Fast, no interpreter needed.
 - ✅ **insert-overwrite keeps size accurate** (`insert_overwrite_keeps_correct_size`). *Given* a
   table, `insert("k", 1)` then `insert("k", 2)`. *Expect* `map.size == 1` (one distinct key). Fixed:
   `insert` now increments `size` only for a new key.
-- ⬜ **lookup probes past a tombstone** (open bug). *Given* a small table where keys `A` and `B`
-  hash to the same bucket (so `B` is placed after `A` by linear probing), `delete(A)` (leaving a
-  tombstone in `A`'s slot). *Expect* `get(B) == Some(&B_value)` — the probe must continue past the
-  tombstone rather than stop at it and report `B` missing.
+- ✅ **lookup probes past a tombstone** (`get_probes_past_tombstone`). Keys `A`/`B` forced into the
+  same bucket (equal `hash`, distinct `ptr`/`size`); `delete(A)` tombstones its slot; `get(B)` still
+  returns `Some(&B)`. Confirms lookup skips tombstones (this was *not* actually a bug).
+- ✅ **`get_mut` does not panic on a missing key** (`find_entry_mut_should_not_panic_for_missing_key`).
+  `get_mut(missing).is_none()` and `get_mut(present).is_some()`.
+- ✅ **resizes at the load factor** (`resizes_when_load_factor_exceeded`). Insert 8 distinct keys into
+  `Table::init(10)` (80% > 70%); *expect* `capacity > 10`. Was red before the cross-multiply fix.
+- 🚫 **re-insert after delete must not duplicate** (`reinsert_after_delete_does_not_duplicate`,
+  `#[ignore]`d — open bug). `insert(A); insert(B)` (collide); `delete(A)`; `insert(B, new)`;
+  *expect* `size == 1`. *Currently* `find_bucket` stops at the tombstone and writes a duplicate, so
+  `size` becomes `2`. Un-ignore when HASHMAP.md gap #2 is fixed.
 
 ### scanner
 - ⬜ **keyword vs identifier.** *Given* source `"var x"`, scan tokens. *Expect* `[Var, Identifier,
@@ -94,7 +102,7 @@ can't silently regress.
 - ⬜ `static mut` metrics → **not yet covered** (see the metrics test below).
 - ⬜ local scoping (fixed in code) → needs Layer 3 (e2e) to assert program output; the concrete
   case is under Layer 3.
-- ⬜ remaining open bugs (`get_mut` panic, arity abort, dead comparisons, load factor, insert-size)
+- ⬜ remaining open bugs (reinsert-past-tombstone duplicate, arity abort, dead comparisons)
   → one `#[ignore]`d test each, flipped to green as the bug is fixed.
 
 ### metrics

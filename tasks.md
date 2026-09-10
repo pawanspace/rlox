@@ -45,14 +45,14 @@ Priority key: 🔴 critical (memory safety / crashes / wrong results) · 🟠 co
   uninterned memory, so `"a" + "b" == "ab"` is `false`. *Fix:* intern in `concat`, or compare by
   content/hash.
 
-- [ ] **`get_mut` panics on absent keys** — `hash_map.rs`. `get_mut` still calls
-  `find_entry_mut(&key).unwrap()`, so a missing key panics instead of returning `None`. `get` was
-  fixed (matches the `Option`), which is why `can_hold_and_delete_multiple_keys` now passes; apply
-  the same `match None => None` fix to `get_mut`.
+- [x] **`get_mut` panics on absent keys** — fixed. `get_mut` now matches the `Option` from
+  `find_entry_mut` instead of `.unwrap()`, so a missing key returns `None`. Covered by
+  `find_entry_mut_should_not_panic_for_missing_key`.
 
-- [ ] **Hash table load factor / probing** — `hash_map.rs::ensure_capacity` uses integer division
-  (`(size+1)/capacity`), so it effectively only resizes when the table is full; a full table can
-  make `find_bucket` loop forever. *Fix:* compare as `(size+1)*100 > capacity*load_factor`.
+- [x] **Hash table load factor** — fixed. `ensure_capacity` now cross-multiplies
+  (`(size+1)*100 > capacity*load_factor`) instead of the integer-division form that truncated to 0
+  and only resized near-full. Resizes at the 70% target. Covered by `resizes_when_load_factor_exceeded`.
+  (`delete` also now decrements `size`, so the count reflects live entries.)
 
 - [x] **`insert` inflates `size` on overwrite** — fixed. `insert` now increments `size` only for a
   genuinely new key (`if !new_value`), so overwrites no longer drift the count. Covered by
