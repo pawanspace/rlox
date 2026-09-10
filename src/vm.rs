@@ -833,12 +833,25 @@ impl VM {
         memory::copy(first.ptr, ptr, first.size, 0);
         memory::copy(second.ptr, ptr, second.size, first.size);
 
-        let hash_value = hash(memory::read_string(ptr, first.size + second.size).as_str());
-        Value::from(Obj::from(FatPointer {
-            ptr,
-            size: (first.size + second.size),
-            hash: hash_value,
-        }))
+        let content = memory::read_string(ptr, total);
+        let hash_value = hash(&content);
+
+        // Note the `.cloned()`: `find_entry_with_value` borrows `self.table`
+        // immutably, but the `None` branch needs `self.table.insert` (mutable).
+        // Cloning the found `FatPointer` out ends the immutable borrow so the
+        // mutable `insert` is allowed.
+        match self.table.find_entry_with_value(&content, hash_value).cloned() {
+            Some(existing) => Value::from(Obj::from(existing)),
+            None => {
+                let concat_ptr = FatPointer {
+                    ptr,
+                    size: total,
+                    hash: hash_value,
+                };
+                self.table.insert(concat_ptr.clone(), Value::Missing);
+                Value::from(Obj::from(concat_ptr))
+            }
+        }
     }
 
     /// Top-level entry point: compile `source` to bytecode, then run it.
