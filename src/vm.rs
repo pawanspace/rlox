@@ -66,6 +66,7 @@ pub(crate) struct VM {
     call_frames: Vec<Option<CallFrame>>,
     /// Number of active call frames — index of the next free frame slot.
     frame_count: usize,
+    output: Vec<String>
 }
 
 /// One activation record for a running function call.
@@ -224,6 +225,7 @@ impl VM {
             globals: Table::init(10),
             call_frames,
             frame_count: 0,
+            output: Vec::new(),
         }
     }
 
@@ -517,7 +519,10 @@ impl VM {
                 }
                 Some(OpCode::Print) => {
                     // `print` statement: pop the value and display it.
-                    debug::print_value(self.pop().as_ref().unwrap(), true);
+                    let v = self.pop().as_ref().unwrap().clone();
+                    let s  = self.format_value(&v);
+                    println!("{s}");
+                    self.output.push(s);
                 }
                 _ => {
                     // Catch-all for opcodes with no arm above.
@@ -779,6 +784,16 @@ impl VM {
         current_frame
     }
 
+    fn format_value(&self, v: &Value) -> String {
+        match v {
+            Value::Number(number) => format!("{}", number),
+            Value::Boolean(boolean) => format!("{}", boolean),
+            Value::Missing => "nil".to_string(),
+            Value::Obj(Obj::Str(p)) => memory::read_string(p.ptr, p.size),
+            Value::Obj(o) => format!("{:?}", o),
+        }
+    }
+
     /// Look up a global's value by name in the `globals` table.
     fn get_variable_value(&self, variable_name: FatPointer) -> Option<&Value> {
         debug::info(format!(
@@ -834,7 +849,7 @@ impl VM {
     /// as a closure, push it (occupying reserved slot 0), create its call frame,
     /// and enter the dispatch loop. The `metrics::record` calls just time the
     /// compile and run phases.
-    pub(crate) fn interpret<'m>(&mut self, source: String) -> InterpretResult {
+    pub(crate) fn interpret<'m>(&mut self, source: String) -> (InterpretResult, Vec<String>) {
         let chars: Vec<char> = source.chars().collect();
         let scanner = Scanner::init(0, 0, chars);
 
@@ -845,7 +860,7 @@ impl VM {
         });
 
         if had_error {
-            return InterpretResult::InterpretCompileError;
+            return (InterpretResult::InterpretCompileError, self.output.clone());
         }
         self.ip = 0;
 
@@ -853,6 +868,33 @@ impl VM {
         let function = Into::<Function>::into(function_obj);
         debug::info(format!("Main function: {:?}", function.clone()));
         self.create_call_frame(function, 0);
-        metrics::record("VM run time".to_string(), || self.run())
+        let run_result = metrics::record("VM run time".to_string(), || self.run());
+        (run_result, self.output.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn run(src: &str) -> Vec<String> {
+        let mut vm = VM::init();
+        vm.interpret(src.to_string());
+        vm.output.clone()
+    }
+
+    #[test] fn arithmetic_precedence() {
+        assert_eq!(run("print 1 + 2 * 3;"), ["7"]);
+    }
+
+    // Guards the fixed local-scoping bug end-to-end.
+    #[test] fn scoping_regression() {
+        let src = "var i = 10; while (i < 15) { i = i + 1; } \
+                   for (var i = 8; i < 10; i = i + 1) {} print i;";
+        assert_eq!(run(src), ["15"]);
+    }
+
+    // The concat / string-equality bug: red today, green once concat interns.
+    #[test] fn concat_string_equality() {
+        assert_eq!(run(r#"print "a" + "b" == "ab";"#), ["true"]);
     }
 }
