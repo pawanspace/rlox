@@ -49,7 +49,7 @@ impl<'a> Chunk {
     /// Add a value to the constant pool and return its index.
     pub(crate) fn add_constant(&mut self, value: Value) -> usize {
         self.constants.append(value);
-        self.constants.count()
+        self.constants.last_index()
     }
 
     /// Emit a "load this constant" instruction: store the value in the pool,

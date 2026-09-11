@@ -90,8 +90,8 @@ not here.)_
   guaranteed). *Minor follow-up:* two error types are in play (`ConversionError` for the `&Value`
   impls, `RuntimeError` for the `Obj` impls) — could be unified.
 
-- [ ] **`ValueArray::count()` underflows on empty** — `value.rs`. `len() - 1` panics if empty; the
-  name is misleading (it returns an index). *Fix:* rename / guard.
+- [x] **`ValueArray::count()` underflows on empty** — fixed. Renamed to `last_index()` (honest name)
+  and guarded the empty case (returns `0` instead of underflowing `len() - 1`). Callers updated.
 
 - [x] **Non-ASCII hashing panic** — fixed. `hash` now iterates `value.bytes()` (canonical FNV-1a),
   so multi-byte characters no longer cause an out-of-bounds `chars[i]` panic; ASCII hashes

@@ -23,7 +23,7 @@ impl ValueArray {
         ValueArray { values: vec![] }
     }
 
-    /// Append a constant and (implicitly) hand back its index via `count`.
+    /// Append a constant. Its index is then available via `last_index`.
     pub(crate) fn append(&mut self, value: common::Value) {
         self.values.push(value);
     }
@@ -35,14 +35,14 @@ impl ValueArray {
         (*self.values.get(index).unwrap()).clone()
     }
 
-    /// The index of the most-recently-appended constant (i.e. `len() - 1`).
-    ///
-    /// This is used right after `append` to get the new constant's index.
-    // BUG: `len() - 1` underflows (panics in debug / wraps to a huge number in
-    // release) when the pool is empty. It is only safe because callers always
-    // call it immediately after `append`. The name is also misleading — it
-    // returns a last-index, not a count.
-    pub(crate) fn count(&self) -> usize {
-        self.values.len() - 1
+    /// Index of the most-recently-appended constant (`len() - 1`), used right
+    /// after `append` to get the new constant's index. Returns `0` for an empty
+    /// pool as a safe placeholder — callers only call this after an `append`, so
+    /// the empty case never actually arises.
+    pub(crate) fn last_index(&self) -> usize {
+        match self.values.is_empty() {
+            true => 0,
+            false => self.values.len() - 1,
+        }
     }
 }
