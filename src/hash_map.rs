@@ -38,7 +38,6 @@
 
 use crate::common::FatPointer;
 use crate::memory;
-use std::borrow::BorrowMut;
 use std::fmt::Debug;
 
 /// The state of a single bucket in the table.
@@ -126,7 +125,7 @@ where
         // `None`. A missing key must not panic.
         let entry = self.find_entry(&key);
         match entry {
-            Some(Entry::Occupied(value, data)) => Some(data),
+            Some(Entry::Occupied(_, data)) => Some(data),
             _ => None,
         }
     }
@@ -135,7 +134,7 @@ where
     pub(crate) fn get_mut(&mut self, key: FatPointer) -> Option<&mut T> {
         let entry = self.find_entry_mut(&key);
         match entry {
-            Some(Entry::Occupied(value, data)) => Some(data),
+            Some(Entry::Occupied(_, data)) => Some(data),
             _ => None,
         }
     }
@@ -295,7 +294,6 @@ where
     /// Return a shared reference to the `Entry` for `key`, if found.
     pub(crate) fn find_entry(&self, key: &FatPointer) -> Option<&Entry<T>> {
         let index = self.find_entry_index(key);
-        println!("Entry index: {:?}", index); // stray debug output
         return match index {
             Some(index) => self.entries.get(index),
             None => None,

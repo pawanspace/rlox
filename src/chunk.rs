@@ -190,8 +190,6 @@ impl<'a> Chunk {
             self.code[(offset + 2) as usize],
             self.code[(offset + 1) as usize],
         ];
-        // NOTE: stray debug `println!` — prints regardless of the debug flags.
-        println!("offset bytes: {:?}", offset_bytes);
         u16::from_ne_bytes(offset_bytes)
     }
 

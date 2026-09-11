@@ -25,7 +25,7 @@ use clap::Parser;
 use std::{env, fs};
 
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use crate::vm::InterpretResult;
 
 // `mod NAME;` declarations pull each sibling file (e.g. `scanner.rs`) into the

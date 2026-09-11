@@ -28,7 +28,7 @@ extern crate num;
 
 use crate::common::{random_color, FatPointer, Function, Obj, OpCode, Value};
 use crate::debug;
-use crate::hash_map::{Table, Entry};
+use crate::hash_map::Table;
 use crate::hasher::hash;
 use crate::metrics;
 use crate::scanner::Scanner;
@@ -724,7 +724,6 @@ impl VM {
                 _ => (),
             }
         }
-        println!("Expected function but instead got: {:?}", callee);
         Err(self.runtime_error("Can only execute function"))
     }
 
@@ -755,7 +754,6 @@ impl VM {
             color: random_color(),
         };
         self.call_frames[self.frame_count] = Some(call_frame);
-        println!("Callframes SIZE: {:?}", self.call_frames.iter().filter(|cf| matches!(cf, Some(_))).count());
         self.frame_count += 1;
     }
 

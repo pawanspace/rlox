@@ -48,10 +48,10 @@ pub fn info(message: String) {
 pub(crate) fn print_value(value: &Value, new_line: bool) {
     match value {
         Value::Obj(obj) => match obj {
-            Obj::Str(fat_ptr) => unsafe {
+            Obj::Str(fat_ptr) => {
                 let str = memory::read_string(fat_ptr.ptr, fat_ptr.size);
                 debug(format!("constant value: {:?}", str), new_line);
-            },
+            }
             _ => debug(format!("constant value: {:?}", obj), new_line),
         },
         _ => debug(format!("constant value: {:?}", value), new_line),

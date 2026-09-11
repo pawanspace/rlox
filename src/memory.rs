@@ -70,11 +70,9 @@ pub fn allocate_bytes(len: usize) -> *mut u8 {
 /// the value's runtime size) and return a raw pointer to it.
 ///
 /// Unlike `allocate`, this consumes `value` only to measure it — it does not
-/// write `value` into the returned memory. (The `println!` is stray debug
-/// output.)
+/// write `value` into the returned memory.
 pub fn allocate_for_value<T>(value: T) -> *mut u8 {
     let layout = Layout::for_value::<T>(&value);
-    println!("Layout size: {:?}", layout.size());
     unsafe {
         let ptr = alloc(layout);
         if ptr.is_null() {
@@ -102,7 +100,7 @@ pub fn add<T>(ptr: *mut u8, value: T) {
 /// 64-bit target — not the size of the pointee. This does not do what the name
 /// suggests. (It appears unused.)
 pub fn size_of<T>(ptr: *mut u8) -> usize {
-    unsafe { mem::size_of_val(&ptr) }
+    mem::size_of_val(&ptr)
 }
 
 /// Pointer *identity* comparison: true only if both pointers hold the same
@@ -110,7 +108,7 @@ pub fn size_of<T>(ptr: *mut u8) -> usize {
 /// the compiler + hash table) relies on this: identical strings are stored
 /// once, so "same address" can stand in for "same string".
 pub fn eq(ptr: *mut u8, other_ptr: *mut u8) -> bool {
-    unsafe { std::ptr::eq(ptr, other_ptr) }
+    std::ptr::eq(ptr, other_ptr)
 }
 
 /// Debug-print the byte at `ptr`.

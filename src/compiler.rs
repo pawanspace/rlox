@@ -941,7 +941,7 @@ impl<'c> Compiler<'c> {
     /// distance big-endian (high byte first).
     fn emit_loop(&mut self, loop_start: usize) {
         self.emit_opcode(OpCode::Loop);
-        let jump = (self.current_chunk().code.len() - loop_start + 2);
+        let jump = self.current_chunk().code.len() - loop_start + 2;
 
         // The jump offset is encoded as two bytes, so it must fit in a u16.
         // `jump` is kept as a `usize` and checked against `u16::MAX` *before*
@@ -1012,7 +1012,7 @@ impl<'c> Compiler<'c> {
         // 12 - 6 - 2 = 4, we need to skip 4 bytes which makes sense because
         // we did insert 4 instructions as part of if block.
         // -2 to adjust for the bytecode for the jump offset itself.
-        let jump = (self.current_chunk().code.len() - offset - 2);
+        let jump = self.current_chunk().code.len() - offset - 2;
 
         // Same two-byte offset limit as `emit_loop`: check the `usize` distance
         // against `u16::MAX` before casting, so a too-large jump errors instead

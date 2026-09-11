@@ -22,7 +22,6 @@ use rand::prelude::*;
 use std::fmt::Debug;
 
 use crate::{chunk::Chunk, hasher, memory};
-use crate::vm::RuntimeError;
 
 /// The VM's instruction set. Every compiled instruction begins with one of
 /// these bytes.
@@ -166,13 +165,10 @@ impl Value {
     /// True if this value is specifically a heap *string* object.
     #[inline]
     pub fn is_obj_string(&self) -> bool {
-        // NOTE: the `unsafe` block here is spurious — `Obj::is_string` is a
-        // safe method (a plain `matches!`). The keyword has no effect and could
-        // be removed.
-        return match self {
-            Value::Obj(obj) => unsafe { obj.is_string() },
+        match self {
+            Value::Obj(obj) => obj.is_string(),
             _ => false,
-        };
+        }
     }
 }
 
