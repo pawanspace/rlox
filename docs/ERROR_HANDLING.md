@@ -168,4 +168,43 @@ Two things to watch while converting:
    InterpretResult::InterpretRuntimeError`, but the `Add` `_` ("unknown type") arm reports the error
    and then returns `InterpretResult::InterpretOk` — i.e. it logs a failure but tells the caller
    everything's fine. The `Result` migration is the moment to make every site actually bail with an
-   error instead of silently continuing.
+   error instead of silently continuing. (Done.)
+
+---
+
+## 6. Remaining polish (implementation notes)
+
+The data for all of these already exists; the notes below are how to wire each up.
+
+### Stack reset — easy
+On a runtime error the value stack and call stack are left mid-computation. Clear them so a REPL
+session (or anything that keeps the `VM` alive) starts clean: in `runtime_error`, before returning
+the `RuntimeError`, set `stack_top = 0` (there's already a `reset_stack()`) and `frame_count = 0`.
+
+### Non-zero exit code — easy
+`run_file` currently prints the message but exits `0`. clox exits **70** on a runtime error so
+scripts/CI can detect failure: after the `eprintln!(err.message)`, call `std::process::exit(70)`.
+Do **not** do this in the REPL `prompt` — the REPL should report the error and keep looping.
+
+### Line number — data exists, needs plumbing
+Each `Chunk` has a parallel `lines: Vec<u32>` indexed by bytecode offset, and a `CallFrame` carries
+its `function.chunk` + `ip`, so the line of the failing instruction is:
+```rust
+let line = current_frame.function.chunk.lines[current_frame.ip - 1]; // -1: ip already advanced
+```
+The snag: `runtime_error` takes `&self` and has **no access to `current_frame`** (it's a local in
+`run`, not a field on `self`). To attach a line, pick one:
+- pass `current_frame` (or just its `ip` + `&chunk`) into `runtime_error`, or
+- have each call site compute the line and set it on the error, or
+- store the current frame on `self` instead of as a `run` local (biggest ripple).
+
+Then widen the type: `struct RuntimeError { message: String, line: u32 }`.
+
+### Call-stack trace — same signal, more of it
+For a full "at line X in function Y, called from …" trace, walk the active frames
+`self.call_frames[0..frame_count]` and, for each, read `chunk.lines[ip - 1]` and `function.name`.
+Same data as the single line, just iterated over the frame stack; add it onto the same
+`runtime_error`/`RuntimeError` change above.
+
+**Suggested order:** stack reset and exit code first (a few lines each, no signature changes), then
+the line number (requires the `current_frame` plumbing), then the trace (extends the line work).
