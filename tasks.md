@@ -105,17 +105,22 @@ not here.)_
   the CLI arg and REPL are commented out. Re-enable once stable.
 - [x] **`always-true `matches!(self, _other)` guards** — fixed. Removed the dead guard from all three
   `PartialEq` impls (`Value`, `Obj`, `FatPointer`); each now matches/compares directly.
-- [ ] **Stray debug output** — e.g. `println!("Entry index …")` in `hash_map.rs`, `println!` in
-  `chunk.rs::get_offset`, per-frame prints in `vm.rs`. Route through `debug` flags, default off.
+- [x] **Stray debug output** — fixed. Removed the stray `println!`s (`chunk::get_offset`,
+  `hash_map::find_entry`, `vm::execute_function`/`create_call_frame`, `memory::allocate_for_value`).
+  Kept intentional output (the `Print` opcode) and the `PRINT_STACK`-gated frame tracing.
 - [ ] **Remaining `&mut self` → `&self`** — clippy `needless_pass_by_ref_mut` flags
   `str_to_float`, `prev_token_to_string`, `get_existing_string`, `resolve_from_locals` (compiler),
   `return_op`/`print_debug_info` params (vm), `identifier_type` (scanner), `get_at_index` (hash_map).
 - [ ] **`resolve_local` clone** — `compiler.rs` clones `locals` to dodge a borrow because
   `resolve_from_locals` takes `&mut self`; making that method `&self` removes the clone.
-- [ ] **`rustfix` dependency** — `Cargo.toml` lists a build tool as a runtime dep; likely mistaken.
-- [ ] **Bump `num-derive` 0.3 → 0.4** to clear the non-local-impl warning.
-- [ ] **`.gitignore`** — add `target/` and `.idea/`.
-- [ ] **94 build warnings** — mostly unused imports/vars; clean up so real warnings stand out.
+- [x] **`rustfix` dependency** — removed from `Cargo.toml`.
+- [x] **Bump `num-derive` 0.3 → 0.4** — done; the non-local-impl warning is gone.
+- [x] **`.gitignore`** — added (`/target`, `.idea/`) and stopped tracking them.
+- [x] **Build warnings** — cleared all the actionable ones (unused imports/vars, needless parens,
+  spurious `unsafe`, unreachable pattern, dead `set_op`/`get_op` inits, elided lifetime): ~38 → 22.
+  The remaining 22 are all `dead_code` for intentionally-unwired scaffolding (disabled REPL,
+  disassembler, unused `memory` helpers, `drop_bytes` reserved for GC, `func_type` field). Left
+  as-is — there are now zero actionable warnings, so the dead-code notices don't hide real ones.
 
 ---
 
