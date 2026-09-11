@@ -103,8 +103,8 @@ not here.)_
 
 - [ ] **REPL/CLI disabled** — `main.rs` hardcodes `first.lox` and sets `RUST_BACKTRACE` in code;
   the CLI arg and REPL are commented out. Re-enable once stable.
-- [ ] **`always-true `matches!(self, _other)` guards** — `common.rs` `PartialEq` impls; `_other` is
-  a catch-all binding, so the guard is dead code. *Fix:* drop it, match directly.
+- [x] **`always-true `matches!(self, _other)` guards** — fixed. Removed the dead guard from all three
+  `PartialEq` impls (`Value`, `Obj`, `FatPointer`); each now matches/compares directly.
 - [ ] **Stray debug output** — e.g. `println!("Entry index …")` in `hash_map.rs`, `println!` in
   `chunk.rs::get_offset`, per-frame prints in `vm.rs`. Route through `debug` flags, default off.
 - [ ] **Remaining `&mut self` → `&self`** — clippy `needless_pass_by_ref_mut` flags

@@ -179,23 +179,16 @@ impl Value {
 /// Value equality (`==`), used by `OpCode::Equal`.
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
-        // BUG: `matches!(self, _other)` binds every value to a fresh catch-all
-        // pattern named `_other`, so it is ALWAYS true. This guard is dead code;
-        // the real logic is the inner `match`. (This pattern repeats in the
-        // `Obj` and `FatPointer` impls below.)
-        if matches!(self, _other) {
-            return match (self, other) {
-                (Value::Boolean(l), Value::Boolean(r)) => l == r,
-                (Value::Number(l), Value::Number(r)) => l == r,
-                (Value::Missing, Value::Missing) => true,
-                // NOTE: `Obj` equality is pointer-identity (see `FatPointer`),
-                // so two strings with equal *contents* built at runtime compare
-                // as NOT equal.
-                (Value::Obj(l), Value::Obj(r)) => l == r,
-                _ => false,
-            };
+        match (self, other) {
+            (Value::Boolean(l), Value::Boolean(r)) => l == r,
+            (Value::Number(l), Value::Number(r)) => l == r,
+            (Value::Missing, Value::Missing) => true,
+            // NOTE: `Obj` equality is pointer-identity (see `FatPointer`),
+            // so two strings with equal *contents* built at runtime compare
+            // as NOT equal.
+            (Value::Obj(l), Value::Obj(r)) => l == r,
+            _ => false,
         }
-        false
     }
 }
 
@@ -310,18 +303,7 @@ pub(crate) struct FatPointer {
 
 impl PartialEq for FatPointer {
     fn eq(&self, other: &Self) -> bool {
-        // Equality is pointer identity: two `FatPointer`s are equal iff they
-        // point at the same address. This is correct because every string is
-        // interned to one canonical pointer — both literals (at compile time)
-        // and runtime results like `concat` (which now interns), so equal
-        // content always shares one pointer.
-        // BUG: the `matches!(self, _other)` guard below is always true (`_other`
-        // is a catch-all binding, not a comparison) — dead code that could be
-        // removed; the real logic is the `ptr ==` line.
-        if matches!(self, _other) {
-           return self.ptr == other.ptr;
-        }
-        false
+        self.ptr == other.ptr
     }
 }
 
@@ -414,16 +396,12 @@ impl Obj {
 
 impl PartialEq for Obj {
     fn eq(&self, other: &Self) -> bool {
-        // BUG: same always-true `matches!(self, _other)` dead guard.
-        // NOTE: only strings are comparable, and via `FatPointer`'s
-        // pointer-identity equality. Functions/closures always compare unequal.
-        if matches!(self, _other) {
-            return match (self, other) {
-                (Obj::Str(l), Obj::Str(r)) => l == r,
-                _ => false,
-            };
+        // Only strings are comparable, via `FatPointer`'s pointer-identity
+        // equality. Functions/closures always compare unequal.
+        match (self, other) {
+            (Obj::Str(l), Obj::Str(r)) => l == r,
+            _ => false,
         }
-        false
     }
 }
 
@@ -460,10 +438,9 @@ impl TryFrom<Obj> for FatPointer {
     fn try_from(obj: Obj) -> Result<FatPointer, Self::Error> {
         match obj {
             Obj::Str(ptr) => Ok(ptr),
-            // BUG: on a non-string this fabricates a `FatPointer` from
-            // `"".to_string().as_mut_ptr()` — a pointer into a temporary
-            // `String` that is dropped at the end of this expression, leaving a
-            // dangling pointer. Even for an empty string this is unsound.
+            // Non-string objects have no FatPointer; return an error instead of
+            // fabricating one. (The old `Into` impl built a dangling pointer to a
+            // temporary `"".to_string()` here — the reason this is now `TryFrom`.)
             _ => Err(ConversionError{message: "Can not get FatPointer".to_string()}),
         }
     }
