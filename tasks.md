@@ -74,13 +74,14 @@ not here.)_
   `ensure_capacity`'s tombstone-free rehash. Covered by `reinsert_after_delete_does_not_duplicate`
   (now passing).
 
-- [ ] **Dead comparison: `arity >= 255`** — `compiler.rs::function`. `arity` is `u8` (max 255), and
-  it's incremented *before* the check, so the guard can't work and a 256th parameter overflows.
-  *Fix:* check `arity == 255` before incrementing (clox style).
+- [x] **Dead comparison: `arity >= 255`** — fixed. Parameter and argument counting both go through a
+  shared `increment_arity` helper that errors and stops incrementing at 255, so a 256th
+  parameter/argument can't overflow the `u8` (`function()` and `call()`).
 
-- [ ] **Dead comparison: `jump > u16::MAX`** — `compiler.rs::emit_loop` / `patch_jump`. `jump` is
-  `u16`, so the overflow guard is always false; long jumps silently wrap. *Fix:* compute the
-  distance in `usize` and compare against `u16::MAX` before casting.
+- [x] **Dead comparison: `jump > u16::MAX`** — fixed. `emit_loop`/`patch_jump` keep the distance as
+  `usize` and compare against `u16::MAX` before casting, so an over-long jump errors instead of
+  wrapping. Also cleared the related `scope_depth <= 0` and `locals.len() <= 0` unsigned comparisons
+  (`== 0` / `.is_empty()`), so `cargo clippy` reports no `absurd_extreme_comparisons`.
 
 - [ ] **`Into` impls that lie** — `common.rs`. `Into<f64>`/`Into<bool>` return `0.0`/`false` on the
   wrong variant; `Into<Obj>`/`Into<FatPointer>` panic or return a dangling pointer to a temporary

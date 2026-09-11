@@ -479,25 +479,16 @@ impl<'c> Compiler<'c> {
         // Parse comma-separated parameters: one, then zero or more `, param`.
         if !self.check(TokenType::RightParen) {
             self.parse_and_define_parameter();
-            arity += 1;
+            arity = self.increment_arity(arity);
             loop {
                 match self.match_token(TokenType::Comma) {
                     true => {
                         self.parse_and_define_parameter();
-                        arity += 1;
-                    }
+                        arity = self.increment_arity(arity);
+                }
                     false => break,
                 }
             }
-        }
-
-        // BUG: `arity` is a u8, so its maximum value is 255; `arity >= 255`
-        // can only ever be true at exactly 255, and a 256th parameter would
-        // overflow the u8 (panicking in debug) before this check runs. clippy
-        // flags this as `absurd_extreme_comparisons`. clox checks the count
-        // *before* incrementing (`if arity == 255 { error }`).
-        if arity >= 255 {
-            self.error_at_current("Can't have more than 255 parameters.");
         }
 
         self.current_context_mut().update_function_arity(arity);
@@ -544,6 +535,15 @@ impl<'c> Compiler<'c> {
             }
             _ => (),
         });
+    }
+
+    fn increment_arity(&mut self, arity: u8) -> u8{
+        if arity == 255 {
+            self.error_at_current("Value can not exceed 255.");
+            arity
+        } else {
+            arity + 1
+        }
     }
 
     /// Resolve `name` as an *upvalue*: a variable that lives in some enclosing
@@ -659,7 +659,7 @@ impl<'c> Compiler<'c> {
         let mut index = 0;
         // NOTE: `scope_depth` is usize, so `<= 0` is equivalent to `== 0`
         // (clippy flags this). It means "we're at global scope".
-        if self.scope_depth <= 0 {
+        if self.scope_depth == 0 {
             index = self.identifier();
         }
         index
@@ -695,7 +695,7 @@ impl<'c> Compiler<'c> {
     // `resolve_from_locals` without holding a borrow of `self` across that
     // call. It's a borrow-checker workaround, not a data requirement.
     fn resolve_local(&mut self, token: Token) -> i32 {
-        if self.current_context_mut().locals.len() <= 0 {
+        if self.current_context_mut().locals.is_empty() {
             return -1;
         }
         let scope_depth = self.scope_depth;
@@ -941,13 +941,12 @@ impl<'c> Compiler<'c> {
     /// distance big-endian (high byte first).
     fn emit_loop(&mut self, loop_start: usize) {
         self.emit_opcode(OpCode::Loop);
-        let jump = (self.current_chunk().code.len() - loop_start + 2) as u16;
+        let jump = (self.current_chunk().code.len() - loop_start + 2);
 
-        // BUG: `jump` is already a u16, so `jump > u16::MAX` is always false
-        // (clippy: absurd_extreme_comparisons). An over-long loop would wrap
-        // when cast to u16 rather than being reported. The check should be
-        // done on the usize distance before the cast.
-        if jump > u16::MAX {
+        // The jump offset is encoded as two bytes, so it must fit in a u16.
+        // `jump` is kept as a `usize` and checked against `u16::MAX` *before*
+        // the cast — an over-long loop is reported rather than silently wrapping.
+        if jump > u16::MAX as usize {
             self.error(format!("Can not jump more than {:?} bytes", u16::MAX).as_str());
         } else {
             self.emit_byte(((jump >> 8) & 0xff) as u8);
@@ -1013,12 +1012,12 @@ impl<'c> Compiler<'c> {
         // 12 - 6 - 2 = 4, we need to skip 4 bytes which makes sense because
         // we did insert 4 instructions as part of if block.
         // -2 to adjust for the bytecode for the jump offset itself.
-        let jump = (self.current_chunk().code.len() - offset - 2) as u16;
+        let jump = (self.current_chunk().code.len() - offset - 2);
 
-        // BUG: same as `emit_loop` — `jump` is a u16 so `jump > u16::MAX` can
-        // never be true (clippy: absurd_extreme_comparisons). A too-large jump
-        // silently wraps instead of erroring.
-        if jump > u16::MAX {
+        // Same two-byte offset limit as `emit_loop`: check the `usize` distance
+        // against `u16::MAX` before casting, so a too-large jump errors instead
+        // of silently wrapping.
+        if jump > u16::MAX as usize {
             self.error(format!("Can not jump more than {:?} bytes", u16::MAX).as_str());
         } else {
             // get msb 8 bits from the offset and mask with 0xff to
@@ -1313,15 +1312,12 @@ impl<'c> Compiler<'c> {
         let mut arg_count = 0;
         if !self.check(TokenType::RightParen) {
             self.expression();
-            arg_count += 1;
+            arg_count = self.increment_arity(arg_count);
             loop {
                 match self.match_token(TokenType::Comma) {
                     true => {
                         self.expression();
-                        arg_count += 1;
-                        if arg_count == 255 {
-                            self.error("Can't have more than 255 arguments");
-                        }
+                        arg_count = self.increment_arity(arg_count);
                     }
                     false => break,
                 }
