@@ -168,27 +168,9 @@ fn parse_rule(token_type: TokenType) -> ParseRule {
             infix: AND,
             precedence: Precedence::And,
         },
-        TokenType::Comma
-        | TokenType::Class
-        | TokenType::Else
-        | TokenType::For
-        | TokenType::Fun
-        | TokenType::If
-        | TokenType::Print
-        | TokenType::Return
-        | TokenType::Super
-        | TokenType::This
-        | TokenType::Var
-        | TokenType::While
-        | TokenType::Error
-        | TokenType::Eof
-        | TokenType::Semicolon
-        | TokenType::Equal
-        | TokenType::Dot
-        | TokenType::LeftBrace
-        | TokenType::RightBrace
-        | TokenType::RightParen
-        | _ => ParseRule {
+        // All remaining tokens (keywords, punctuation, EOF, errors) have no
+        // prefix or infix parse behavior of their own.
+        _ => ParseRule {
             prefix: NOOP,
             infix: NOOP,
             precedence: Precedence::None,
@@ -353,7 +335,7 @@ pub(crate) struct Compiler<'c> {
 
 impl<'c> Compiler<'c> {
     /// Build a fresh compiler with a single top-level (script) context.
-    pub(crate) fn init(scanner: Scanner, table: &'c mut Table<Value>) -> Compiler {
+    pub(crate) fn init(scanner: Scanner, table: &'c mut Table<Value>) -> Compiler<'c> {
         let parser = Parser {
             current: None,
             previous: None,
@@ -756,8 +738,10 @@ impl<'c> Compiler<'c> {
     fn variable(&mut self, can_assign: bool) {
         let token = self.parser.previous.unwrap();
         let mut existing_index = self.resolve_local(token);
-        let mut set_op = OpCode::Nil;
-        let mut get_op = OpCode::Nil;
+        // Assigned on every branch below (local / upvalue / global), so use
+        // deferred initialization rather than a dead `OpCode::Nil` placeholder.
+        let set_op;
+        let get_op;
         if existing_index >= 0 {
             set_op = OpCode::SetLocalVariable;
             get_op = OpCode::GetLocalVariable;
