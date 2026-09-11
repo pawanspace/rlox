@@ -144,9 +144,11 @@ Once unblocked (each: run the source, assert the captured output):
   → `2`).
 - ⬜ **closures** (once Chapter 25 runtime is finished): a counter closure captures and mutates an
   upvalue across calls → `1`, `2`, `3`.
-- ⬜ **runtime errors** surface as an error result (not a silent log): arity mismatch is done
-  (`arity_mismatch_should_result_in_errors`); other cases (e.g. `-"x"` type errors) still to cover,
-  and `runtime_error` itself still only logs rather than resetting the stack / reporting.
+- ⬜ **runtime errors** surface as `InterpretResult::InterpretRuntimeError(RuntimeError)` (and
+  `main` prints to stderr). Mechanism is done; arity mismatch is covered
+  (`arity_mismatch_should_result_in_errors`). Still to add tests for the other cases (type errors
+  like `-"x"` or `1 + "a"`, undefined-variable get/set) and, once implemented, stack reset + line
+  numbers in `RuntimeError`.
 
 ---
 

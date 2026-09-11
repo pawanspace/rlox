@@ -1,7 +1,14 @@
-# rlox — Runtime Error Handling: `bool` today, `Result` tomorrow
+# rlox — Runtime Error Handling: from `bool` to `Result`
 
-How the VM signals runtime errors, why the current approach is bug-prone, and the idiomatic
-Rust refactor to `Result` + `?`. This is a design note / proposed refactor, not yet implemented.
+How the VM signals runtime errors, why the old `bool`-based approach was bug-prone, and the
+`Result`-based design that replaced it.
+
+> **Status: implemented.** Fallible ops return `Result<(), RuntimeError>`; the dispatch loop maps a
+> returned `Err` to `InterpretResult::InterpretRuntimeError(RuntimeError)`; and `main` prints the
+> message to stderr. `runtime_error` now *constructs* the error (rather than logging). Sections 1–2
+> below describe the old `bool` approach for context; §3–5 are the current design. Still to do:
+> reset the stack + attach a line/stack trace to `RuntimeError`, and a non-zero exit code in
+> `run_file`.
 
 ---
 
@@ -130,3 +137,35 @@ pass, not mid-feature.
 
 Until then, the `bool` approach is correct where it's actually checked (e.g. the arity fix) — it's
 just easy to get wrong, which is the reason to migrate.
+
+---
+
+## 5. Call-site inventory (`vm.rs`)
+
+There are 9 `runtime_error` call sites to convert — the full surface of the refactor:
+
+| Location | Op / method | Error |
+|---|---|---|
+| `BINARY_OP!` macro | `+ - * / < >` | "Expected two numbers" |
+| `Negate` | unary `-` | "Expected number" |
+| `Add` | string `+` | "Expected String on right side" |
+| `Add` | `_` arm | "Unknown type" |
+| `set_global_variable` | `SetGlobalVariable` | undefined variable on set |
+| `push_obj_value_to_stack` | `GetGlobalVariable` | undefined variable |
+| `execute_function` (Fun arm) | `Call` | arity mismatch |
+| `execute_function` (Closure arm) | `Call` | arity mismatch |
+| `execute_function` | `Call` | "Can only execute function" (non-callable) |
+
+Two things to watch while converting:
+
+1. **The `BINARY_OP!` macro is special.** It's textually pasted *into* the `run` loop, so it already
+   does `runtime_error(...); return InterpretResult::InterpretRuntimeError;` directly rather than
+   returning a `bool` to a caller. Decide whether the binary op becomes a helper that returns
+   `Result` (cleaner, uniform with the rest) or the macro keeps returning the result value. Either
+   works; it's just the one site that isn't already in a helper.
+
+2. **The existing returns are inconsistent — audit each site.** Most sites `return
+   InterpretResult::InterpretRuntimeError`, but the `Add` `_` ("unknown type") arm reports the error
+   and then returns `InterpretResult::InterpretOk` — i.e. it logs a failure but tells the caller
+   everything's fine. The `Result` migration is the moment to make every site actually bail with an
+   error instead of silently continuing.

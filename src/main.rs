@@ -26,6 +26,7 @@ use std::{env, fs};
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use crate::vm::InterpretResult;
 
 // `mod NAME;` declarations pull each sibling file (e.g. `scanner.rs`) into the
 // crate as a module. This is how Rust wires the codebase together — nothing in
@@ -80,7 +81,11 @@ fn run_file(path: PathBuf) {
         std::process::exit(74);
     }
     let mut vm = vm::VM::init();
-    vm.interpret(contents.to_string());
+    let result = vm.interpret(contents.to_string());
+    match  result.0 {
+        InterpretResult::InterpretRuntimeError(err) => eprintln!("{}", err.message),
+        _ => ()
+    }
 }
 
 /// Interactive Read-Eval-Print Loop state.

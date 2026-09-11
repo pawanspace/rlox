@@ -31,8 +31,12 @@ not here.)_
   `InterpretRuntimeError` instead of building a call frame with a misaligned stack. Covered by
   `arity_mismatch_should_result_in_errors`.
 
-- [ ] **`runtime_error` only logs** — `vm.rs`. It prints via `debug::info` but doesn't reset the
-  stack or surface a real error to the caller. *Fix:* proper error propagation + stack trace.
+- [x] **`runtime_error` doesn't surface errors** — fixed. It now builds a `RuntimeError`, fallible
+  ops return `Result<(), RuntimeError>` and propagate it, the dispatch loop maps it to
+  `InterpretResult::InterpretRuntimeError(RuntimeError)`, and `main` prints the message to stderr.
+  See [docs/ERROR_HANDLING.md](docs/ERROR_HANDLING.md). *Remaining polish (not blocking):* reset the
+  stack and attach a line number / call-stack trace to `RuntimeError`; set a non-zero process exit
+  code in `run_file`.
 
 - [x] **String literals keep their surrounding quotes** — fixed. `prev_token_to_string` now strips
   the `"` delimiters for `String` tokens (`source[start+1 .. start+length-1]`), leaving identifiers

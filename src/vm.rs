@@ -40,6 +40,9 @@ use colored::{Color, Colorize};
 /// the tradeoff is a hard recursion/expression-depth limit.
 const STACK_MAX: usize = 512;
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct RuntimeError {pub message: String}
+
 /// The virtual machine: holds all runtime state while executing bytecode.
 #[derive(Debug)]
 pub(crate) struct VM {
@@ -122,11 +125,11 @@ impl CallFrame {
 
 /// Outcome of running a program. The caller (`main`/REPL) uses this to decide
 /// process exit codes. Mirrors clox's `InterpretResult`.
-#[derive(Debug, Clone, PartialOrd, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum InterpretResult {
     InterpretOk,
     InterpretCompileError,
-    InterpretRuntimeError,
+    InterpretRuntimeError(RuntimeError),
 }
 
 /// Read the next bytecode byte and advance the frame's instruction pointer.
@@ -174,8 +177,8 @@ macro_rules! BINARY_OP {
         let peek_0 = $self.peek(0).as_ref().unwrap();
         let peek_1 = $self.peek(1).as_ref().unwrap();
         if !peek_0.is_number() || !peek_1.is_number() {
-            $self.runtime_error("Expected two numbers for binary operation.");
-            return InterpretResult::InterpretRuntimeError;
+            let runtime_error = $self.runtime_error("Expected two numbers for binary operation.");
+            return InterpretResult::InterpretRuntimeError(runtime_error);
         }
         // pop_pair returns (top, second) = (right operand, left operand)
         let (right_val_popped, left_val_popped)  = $self.pop_pair();
@@ -270,14 +273,15 @@ impl VM {
     }
 
 
-    /// Report a runtime error.
+    /// Build a `RuntimeError` describing a failure.
     ///
-    /// NOTE: this currently only *logs* the message via the debug channel — it
-    /// does not unwind the stack or print a proper stack trace. Callers must
-    /// themselves `return InterpretResult::InterpretRuntimeError` to actually
-    /// abort execution; calling this alone does not stop the VM.
-    fn runtime_error(&self, message: &str) {
-        debug::info(format!("Runtime error: {:?}", message));
+    /// This only *constructs* the error value; it doesn't print or unwind.
+    /// Callers propagate it (`return Err(...)` / `?`), the dispatch loop turns it
+    /// into `InterpretResult::InterpretRuntimeError`, and the boundary (`main`)
+    /// is responsible for displaying it. (A future improvement is to also reset
+    /// the stack and attach the line/stack trace here.)
+    fn runtime_error(&self, message: &str) -> RuntimeError{
+        return RuntimeError{message: message.to_string()}
     }
 
     /// The heart of the VM: the **dispatch loop**.
@@ -323,8 +327,8 @@ impl VM {
                     // Unary minus: peek to type-check, then pop and push -x.
                     let value = self.peek(0).as_ref().unwrap();
                     if !value.is_number() {
-                        self.runtime_error("Expected number for Negate opcode!");
-                        return InterpretResult::InterpretRuntimeError;
+                        let runtime_error = self.runtime_error("Expected number for Negate opcode!");
+                        return InterpretResult::InterpretRuntimeError(runtime_error);
                     }
                     let pop_val = self.pop().as_ref().unwrap();
                     let float_val = Into::<f64>::into(pop_val);
@@ -342,8 +346,8 @@ impl VM {
                                     self.push(combined);
                                 }
                             } else {
-                                self.runtime_error("Expected String value on right side while adding to another string.");
-                                return InterpretResult::InterpretRuntimeError;
+                                let runtime_error = self.runtime_error("Expected String value on right side while adding to another string.");
+                                return InterpretResult::InterpretRuntimeError(runtime_error);
                             }
                         }
                         Value::Number(_value) => BINARY_OP!(self, +),
@@ -351,8 +355,8 @@ impl VM {
                             // NOTE: this reports an error but returns
                             // `InterpretOk` (not `InterpretRuntimeError`), so a
                             // bad Add is silently treated as success.
-                            self.runtime_error("Unknown type detected for Add operation");
-                            return InterpretResult::InterpretOk;
+                            let runtime_error = self.runtime_error("Unknown type detected for Add operation");
+                            return InterpretResult::InterpretRuntimeError(runtime_error);
                         }
                     }
                 }
@@ -446,17 +450,19 @@ impl VM {
                     // frame; we then reload `current_frame` to the callee.
                     let arg_count = READ_BYTE!(self, current_frame);
                     let old_frame = current_frame.clone();
-                    if !self.execute_function(arg_count as usize, arg_count) {
-                        return InterpretResult::InterpretRuntimeError;
+                    match self.execute_function(arg_count as usize, arg_count) {
+                        Ok(_) => {
+                            current_frame = self.call_frames[self.frame_count - 1]
+                                .as_ref()
+                                .unwrap()
+                                .clone();
+                            // Save the caller's frame (with its advanced `ip`) back into
+                            // the array. It's at `frame_count - 2` because the callee
+                            // we just created occupies `frame_count - 1`.
+                            self.call_frames[self.frame_count - 2] = Some(old_frame);
+                        },
+                        Err(err) => return InterpretResult::InterpretRuntimeError(err)
                     }
-                    current_frame = self.call_frames[self.frame_count - 1]
-                        .as_ref()
-                        .unwrap()
-                        .clone();
-                    // Save the caller's frame (with its advanced `ip`) back into
-                    // the array. It's at `frame_count - 2` because the callee
-                    // we just created occupies `frame_count - 1`.
-                    self.call_frames[self.frame_count - 2] = Some(old_frame);
                 }
                 Some(OpCode::JumpIfFalse) => {
                     // Conditional jump used for `if`/`while`/`and`/`or`. The
@@ -557,8 +563,8 @@ impl VM {
             self.globals.delete(variable_name.clone());
             let key = memory::read_string(ptr, size);
             let message = format!("Unable to find value for key {:?}", key);
-            self.runtime_error(message.as_str());
-            return Some(InterpretResult::InterpretRuntimeError);
+            let runtime_error = self.runtime_error(message.as_str());
+            return Some(InterpretResult::InterpretRuntimeError(runtime_error));
         }
 
         None
@@ -620,8 +626,8 @@ impl VM {
             None => {
                 let key = memory::read_string(ptr, size);
                 let message = format!("Unable to find value for key {:?}", key);
-                self.runtime_error(message.as_str());
-                return Some(InterpretResult::InterpretRuntimeError);
+                let runtime_error = self.runtime_error(message.as_str());
+                return Some(InterpretResult::InterpretRuntimeError(runtime_error));
             }
         }
         None
@@ -683,46 +689,43 @@ impl VM {
     /// argument count doesn't match the function's arity — in which case the
     /// `Call` opcode turns that `false` into an `InterpretRuntimeError` rather
     /// than building a frame with a misaligned stack.
-    fn execute_function(&mut self, distance: usize, arg_count: u8) -> bool {
+    fn execute_function(&mut self, distance: usize, arg_count: u8) -> Result<(), RuntimeError> {
         let callee = self.peek(distance);
         if callee.as_ref().unwrap().is_obj() {
             let obj = Into::<Obj>::into(callee.as_ref().unwrap());
             match obj {
                 Obj::Fun(function) => {
                     if function.arity != arg_count {
-                        self.runtime_error(
+                        return Err(self.runtime_error(
                             format!(
                                 "Expected: {:?} arguments but received: {:?}",
                                 function.arity, arg_count
                             )
                                 .as_str(),
-                        );
-                        return false;
+                        ));
                     }
                     self.create_call_frame(function, arg_count);
-                    return true;
+                    return Ok(());
                 }
                 Obj::Closure(obj) => {
                     let function = Into::<Function>::into(*obj);
                     if function.arity != arg_count {
-                        self.runtime_error(
+                        return Err(self.runtime_error(
                             format!(
                                 "Expected: {:?} arguments but received: {:?}",
                                 function.arity, arg_count
                             )
                             .as_str(),
-                        );
-                        return false;
+                        ));
                     }
                     self.create_call_frame(function, arg_count);
-                    return true;
+                    return Ok(());
                 }
                 _ => (),
             }
         }
         println!("Expected function but instead got: {:?}", callee);
-        self.runtime_error("Can only execute function");
-        false
+        Err(self.runtime_error("Can only execute function"))
     }
 
     /// Push a new `CallFrame` for `function`, computing its stack window base.
@@ -913,6 +916,7 @@ mod tests {
     }
 
     #[test] fn arity_mismatch_should_result_in_errors() {
-        assert_eq!(run("fun add(a, b) { return a + b; } add(1);").0, InterpretResult::InterpretRuntimeError);
+        let result = run("fun add(a, b) { return a + b; } add(1);");
+        assert!(matches!(result.0, InterpretResult::InterpretRuntimeError(_)));
     }
 }
