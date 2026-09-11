@@ -182,8 +182,8 @@ macro_rules! BINARY_OP {
         }
         // pop_pair returns (top, second) = (right operand, left operand)
         let (right_val_popped, left_val_popped)  = $self.pop_pair();
-        let left_float_val = Into::<f64>::into(left_val_popped.as_ref().unwrap());
-        let right_float_val = Into::<f64>::into(right_val_popped.as_ref().unwrap());
+        let left_float_val = f64::try_from(left_val_popped.as_ref().unwrap()).unwrap();
+        let right_float_val = f64::try_from(right_val_popped.as_ref().unwrap()).unwrap();
         $self.push(Value::from(left_float_val $op right_float_val));
     }}
 }
@@ -281,7 +281,7 @@ impl VM {
     /// is responsible for displaying it. (A future improvement is to also reset
     /// the stack and attach the line/stack trace here.)
     fn runtime_error(&self, message: &str) -> RuntimeError{
-        return RuntimeError{message: message.to_string()}
+        RuntimeError{message: message.to_string()}
     }
 
     /// The heart of the VM: the **dispatch loop**.
@@ -331,7 +331,7 @@ impl VM {
                         return InterpretResult::InterpretRuntimeError(runtime_error);
                     }
                     let pop_val = self.pop().as_ref().unwrap();
-                    let float_val = Into::<f64>::into(pop_val);
+                    let float_val = f64::try_from(pop_val).unwrap();
                     self.push(Value::from(-1.0 * float_val));
                 }
                 Some(OpCode::Add) => {
@@ -417,7 +417,7 @@ impl VM {
                     // Bind a global: the name is a constant, the value is on top
                     // of the stack. Insert into `globals`, then pop the value.
                     let constant = READ_CONSTANT!(self, current_frame).unwrap().clone();
-                    let variable_name = Into::<FatPointer>::into(&constant);
+                    let variable_name = FatPointer::try_from(&constant).unwrap();
                     let value = self.peek(0).as_ref().unwrap();
                     debug::info(format!(
                         "DefineGlobalVariable: Define constant value: {:?}",
@@ -440,7 +440,7 @@ impl VM {
                     // misinterpreted as opcodes. Closures that capture
                     // variables therefore do not work.
                     let constant = READ_CONSTANT!(self, current_frame).unwrap().clone();
-                    let function_obj = Into::<Obj>::into(&constant);
+                    let function_obj = Obj::try_from(&constant).unwrap();
                     let closure = Obj::Closure(Box::new(function_obj));
                     self.push(Value::from(closure));
                 }
@@ -511,7 +511,7 @@ impl VM {
                         "GetGlobalVariable: Read constant value: {:?}",
                         constant
                     ));
-                    let variable_name = Into::<FatPointer>::into(&constant);
+                    let variable_name = FatPointer::try_from(&constant).unwrap();
                     if let Some(ret) = self.push_obj_value_to_stack(variable_name) {
                         return ret;
                     }
@@ -519,7 +519,7 @@ impl VM {
                 Some(OpCode::SetGlobalVariable) => {
                     // Assign to an existing global; error if it wasn't declared.
                     let constant = READ_CONSTANT!(self, current_frame).unwrap().clone();
-                    let variable_name = Into::<FatPointer>::into(&constant);
+                    let variable_name = FatPointer::try_from(&constant).unwrap();
                     if let Some(ret) = self.set_global_variable(variable_name) {
                         return ret;
                     }
@@ -692,7 +692,7 @@ impl VM {
     fn execute_function(&mut self, distance: usize, arg_count: u8) -> Result<(), RuntimeError> {
         let callee = self.peek(distance);
         if callee.as_ref().unwrap().is_obj() {
-            let obj = Into::<Obj>::into(callee.as_ref().unwrap());
+            let obj = Obj::try_from(callee.as_ref().unwrap()).unwrap();
             match obj {
                 Obj::Fun(function) => {
                     if function.arity != arg_count {
@@ -708,7 +708,7 @@ impl VM {
                     return Ok(());
                 }
                 Obj::Closure(obj) => {
-                    let function = Into::<Function>::into(*obj);
+                    let function = Function::try_from(*obj).unwrap();
                     if function.arity != arg_count {
                         return Err(self.runtime_error(
                             format!(
@@ -816,7 +816,7 @@ impl VM {
     /// everything else (including 0 and "") is truthy. This is the rule used by
     /// `if`, `while`, `and`, `or`, and `!`.
     fn is_falsey(&self, value: Value) -> bool {
-        value.is_missing() || (value.is_boolean() && !Into::<bool>::into(&value))
+        value.is_missing() || (value.is_boolean() && !bool::try_from(&value).unwrap())
     }
 
     /// Concatenate the top two string operands into a new string value.
@@ -828,9 +828,8 @@ impl VM {
     /// path compares string pointers, not contents).
     fn concat(&mut self) -> Value {
         let(second_val, first_val) = self.pop_pair();
-
-        let second = Into::<FatPointer>::into(second_val.as_ref().unwrap());
-        let first = Into::<FatPointer>::into(first_val.as_ref().unwrap());
+        let first = FatPointer::try_from(first_val.as_ref().unwrap()).unwrap();
+        let second = FatPointer::try_from(second_val.as_ref().unwrap()).unwrap();
 
         let total = first.size + second.size;
         let ptr = memory::allocate_bytes(total);
@@ -882,7 +881,7 @@ impl VM {
         self.ip = 0;
 
         self.push(Value::from(Obj::Closure(Box::new(function_obj.clone()))));
-        let function = Into::<Function>::into(function_obj);
+        let function = Function::try_from(function_obj).unwrap();
         debug::info(format!("Main function: {:?}", function.clone()));
         self.create_call_frame(function, 0);
         let run_result = metrics::record("VM run time".to_string(), || self.run());

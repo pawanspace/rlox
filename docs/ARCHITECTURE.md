@@ -250,7 +250,7 @@ These are documented inline in the source with `// BUG:` / `// NOTE:` markers. S
 | `vm.rs` | Closure upvalue operands not consumed; `Get/SetUpValue` unhandled; arity mismatch logs but doesn't abort; `runtime_error` only logs. |
 | `compiler.rs` | Dead comparisons `arity >= 255` and `jump > u16::MAX` (u8/u16 can't exceed their max) — clippy `absurd_extreme_comparisons`; `resolve_local` clones locals to dodge a borrow. |
 | `hash_map.rs` | Load-factor uses integer division so it effectively resizes only when full (`find_bucket` can loop forever on a full table); `insert` bumps `size` even on overwrite; inconsistent key matching (pointer vs content). |
-| `common.rs` | `PartialEq` guarded by always-true `matches!(self, _other)`; value/string equality is pointer identity, so computed strings compare unequal; hand-written `Into` returns bogus defaults/panics (should be `TryFrom`). |
+| `common.rs` | `PartialEq` impls still carry the always-true `matches!(self, _other)` dead guard (cleanup). (Fixed: string equality now works via interning; fallible conversions are `TryFrom` returning `Result` instead of lying `Into`.) |
 | `metrics.rs` | `static mut EVENTS` is unsound (`static_mut_refs`). |
 | general | Hand-allocated string memory is never freed (leaks); no GC yet. |
 

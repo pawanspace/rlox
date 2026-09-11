@@ -83,9 +83,12 @@ not here.)_
   wrapping. Also cleared the related `scope_depth <= 0` and `locals.len() <= 0` unsigned comparisons
   (`== 0` / `.is_empty()`), so `cargo clippy` reports no `absurd_extreme_comparisons`.
 
-- [ ] **`Into` impls that lie** — `common.rs`. `Into<f64>`/`Into<bool>` return `0.0`/`false` on the
-  wrong variant; `Into<Obj>`/`Into<FatPointer>` panic or return a dangling pointer to a temporary
-  `"".to_string()`. *Fix:* use `TryFrom` returning `Result` for fallible conversions.
+- [x] **`Into` impls that lie** — fixed. The fallible conversions are now `TryFrom` returning
+  `Result` instead of hand-written `Into` that returned `0.0`/`false`, panicked, or built a dangling
+  pointer: `TryFrom<&Value>` for `bool`/`f64`/`Obj`/`FatPointer`, and `TryFrom<Obj>` for
+  `FatPointer`/`Function`. Call sites use `X::try_from(v)` (`.unwrap()` where the type is already
+  guaranteed). *Minor follow-up:* two error types are in play (`ConversionError` for the `&Value`
+  impls, `RuntimeError` for the `Obj` impls) — could be unified.
 
 - [ ] **`ValueArray::count()` underflows on empty** — `value.rs`. `len() - 1` panics if empty; the
   name is misleading (it returns an index). *Fix:* rename / guard.

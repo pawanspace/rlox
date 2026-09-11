@@ -22,6 +22,7 @@ use rand::prelude::*;
 use std::fmt::Debug;
 
 use crate::{chunk::Chunk, hasher, memory};
+use crate::vm::RuntimeError;
 
 /// The VM's instruction set. Every compiled instruction begins with one of
 /// these bytes.
@@ -220,56 +221,61 @@ impl From<Obj> for Value {
     }
 }
 
-// The `Into<T> for &Value` impls below go the other way: unwrap a `Value` back
-// into a raw Rust value.
-//
-// SMELL: these hand-write `Into` directly. Idiomatic Rust implements `From`
-// (which yields `Into` automatically); implementing `Into` by hand is
-// discouraged. More importantly, these conversions can *fail* (a `Value` might
-// not hold the type asked for), and they paper over that by returning a bogus
-// default (`false`, `0.0`) or panicking. The correct tool for a fallible
-// conversion is `TryFrom`, which returns a `Result` and forces the caller to
-// handle the mismatch instead of silently producing wrong data.
-impl Into<bool> for &Value {
-    fn into(self) -> bool {
-        match self {
-            Value::Boolean(value) => *value,
-            // BUG-RISK: a non-boolean silently becomes `false` instead of
-            // signalling a type error.
-            _ => false,
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ConversionError {pub message: String}
+
+// The `TryFrom<&Value>` impls below go the other way: unwrap a `Value` back
+// into a raw Rust value. These conversions can *fail* (a `Value` might not hold
+// the type asked for), so they use `TryFrom` (returning `Result`) rather than
+// `Into` — the caller must handle the mismatch instead of getting a bogus
+// default (`false`, `0.0`) or a panic. Implementing `TryFrom` also yields
+// `TryInto` for free, so call sites can use `v.try_into()` / `X::try_from(v)`.
+impl TryFrom<&Value> for bool {
+    type Error = ConversionError;
+
+    fn try_from(value: &Value) -> Result<bool, Self::Error> {
+        match value {
+            Value::Boolean(bool_value) => Ok(*bool_value),
+            _ => Err(ConversionError{message: "cannot convert value to bool".to_string()}),
+        }
+    }
+}
+impl TryFrom<&Value> for f64 {
+    type Error = ConversionError;
+
+    fn try_from(value: &Value) -> Result<f64, Self::Error> {
+        match value {
+            Value::Number(f64_value) => Ok(*f64_value),
+            _ => Err(ConversionError{message: "cannot convert value to f64".to_string()}),
         }
     }
 }
 
-impl Into<f64> for &Value {
-    fn into(self) -> f64 {
-        match self {
-            Value::Number(value) => *value,
-            // BUG-RISK: a non-number silently becomes `0.0`.
-            _ => 0.0,
+
+impl TryFrom<&Value> for Obj {
+    type Error = ConversionError;
+
+    fn try_from(value: &Value) -> Result<Obj, Self::Error> {
+        match value {
+            Value::Obj(obj_value) => Ok(obj_value.clone()),
+            _ => Err(ConversionError{message: "cannot convert value to obj".to_string()}),
         }
     }
 }
 
-impl Into<Obj> for &Value {
-    fn into(self) -> Obj {
-        match self {
-            Value::Obj(value) => value.clone(),
-            // Panics on a non-object. At least this one fails loudly rather
-            // than fabricating a value — but `TryFrom` would still be better.
-            _ => panic!("Unexpected error"),
+
+
+impl TryFrom<&Value> for FatPointer {
+    type Error = ConversionError;
+
+    fn try_from(value: &Value) -> Result<FatPointer, Self::Error> {
+        match value {
+            Value::Obj(obj) => Ok(FatPointer::try_from(obj.clone()).unwrap()),
+            _ => Err(ConversionError{message: "cannot convert value to FatPointer".to_string()}),
         }
     }
 }
 
-impl Into<FatPointer> for &Value {
-    fn into(self) -> FatPointer {
-        match self {
-            Value::Obj(obj) => Into::<FatPointer>::into(obj.clone()),
-            _ => panic!("Unexpected error"),
-        }
-    }
-}
 
 /// A hand-rolled string representation: a raw pointer to bytes, the length, and
 /// a cached hash.
@@ -449,38 +455,30 @@ impl From<&mut str> for Obj {
     }
 }
 
-/// Unwrap a string object back to its `FatPointer`.
-///
-/// SMELL: hand-written `Into` for a *fallible* conversion; `TryFrom` would be
-/// the right tool.
-impl Into<FatPointer> for Obj {
-    fn into(self) -> FatPointer {
-        match self {
-            Obj::Str(ptr) => ptr,
+impl TryFrom<Obj> for FatPointer {
+    type Error = ConversionError;
+    fn try_from(obj: Obj) -> Result<FatPointer, Self::Error> {
+        match obj {
+            Obj::Str(ptr) => Ok(ptr),
             // BUG: on a non-string this fabricates a `FatPointer` from
             // `"".to_string().as_mut_ptr()` — a pointer into a temporary
             // `String` that is dropped at the end of this expression, leaving a
             // dangling pointer. Even for an empty string this is unsound.
-            _ => FatPointer {
-                ptr: "".to_string().as_mut_ptr(),
-                size: 0 as usize,
-                hash: 0,
-            },
+            _ => Err(ConversionError{message: "Can not get FatPointer".to_string()}),
         }
     }
 }
 
-/// Unwrap a function object. Panics on any other object kind.
-///
-/// SMELL: again a fallible conversion written as `Into` instead of `TryFrom`.
-impl Into<Function> for Obj {
-    fn into(self) -> Function {
-        match self {
-            Obj::Fun(function) => function,
-            _ => panic!("Not able to convert to function from object"),
+impl TryFrom<Obj> for Function {
+    type Error = ConversionError;
+    fn try_from(obj: Obj) -> Result<Function, Self::Error> {
+        match obj {
+            Obj::Fun(function) => Ok(function),
+            _ => Err(ConversionError{message: "Can not get Function".to_string()}),
         }
     }
 }
+
 
 /// Pick a random RGB terminal color. Used only by the debug output to tint each
 /// call frame differently so nested calls are easy to tell apart on screen.
