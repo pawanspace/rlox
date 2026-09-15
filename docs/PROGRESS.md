@@ -1,9 +1,9 @@
 # rlox — Progress Report
 
 A summary of what changed and what was learned during a focused hardening pass on the rlox bytecode
-VM. Roughly **40 commits**; the test suite went from *7 tests (1 failing)* to **20 passing, 0
-failing**; build warnings dropped from ~38 to 22 (all remaining are dead-code for intentionally
-unwired scaffolding). Six design/reference docs were added and the whole codebase was documented.
+VM. The test suite went from *7 tests (1 failing)* to **22 passing, 0 failing**; build warnings
+dropped from ~38 to 22 (all remaining are dead-code for intentionally unwired scaffolding). Six
+design/reference docs were added and the whole codebase was documented.
 
 ---
 
@@ -41,6 +41,12 @@ unwired scaffolding). Six design/reference docs were added and the whole codebas
 - **Lying `Into` conversions** — hand-written `Into<X> for &Value`/`Obj` returned `0.0`/`false`,
   panicked, or built a dangling pointer. Replaced with `TryFrom` returning `Result`.
 - **`ValueArray::count()` underflow** — renamed to `last_index()` and guarded the empty case.
+- **Recursion broken** — a function's self-reference (e.g. `fact` inside `fact`) went through the
+  upvalue-resolution walk, which unconditionally recorded a phantom upvalue (index `-1 as u8 =
+  255`). The compiler then emitted upvalue operand bytes that the half-implemented `Closure` opcode
+  never consumed, so the ip drifted onto an invalid opcode and the VM halted. Fixed by only
+  recording an upvalue when the recursive lookup actually finds one; a top-level recursive call now
+  resolves as a global (Ch. 24) and runs (`fact(5)` → `120`).
 
 ### Refactors & features
 - **Result-based runtime errors** — introduced `RuntimeError`; fallible ops return `Result`, the
@@ -52,9 +58,10 @@ unwired scaffolding). Six design/reference docs were added and the whole codebas
   shared `current_context()`/`current_context_mut()` split; inlined a needless `get_rule` wrapper.
 
 ### Tests
-- From 7 (1 failing) to **20 passing**: memory round-trip + `drop_bytes`; hash-map delete,
+- From 7 (1 failing) to **22 passing**: memory round-trip + `drop_bytes`; hash-map delete,
   insert-overwrite, tombstone lookup/reinsert, `get_mut`, resize; hasher empty/non-ASCII; and
-  end-to-end VM tests (arithmetic precedence, the scoping regression, concat equality, arity abort).
+  end-to-end VM tests (arithmetic precedence, the scoping regression, concat equality, arity abort,
+  recursion, first-class calls).
 
 ### Hygiene
 - Removed stray `println!`s, unused imports, spurious `unsafe`, needless parens; dropped the unused
@@ -117,15 +124,18 @@ unwired scaffolding). Six design/reference docs were added and the whole codebas
 
 ## 3. Where things stand
 
-- **Chapters (Crafting Interpreters, clox):** 14–24 done; **25 (closures)** is compile-side only —
-  the VM doesn't yet consume upvalue operands or handle `Get/SetUpValue`; **26+ (GC, classes,
-  inheritance, optimization)** not started.
+- **Chapters (Crafting Interpreters, clox):** 14–24 done — including **recursion**, which was found
+  broken (a global self-reference registered a phantom upvalue, derailing the VM) and fixed; it
+  needs no closures, matching Ch. 24. **25 (closures)** is compile-side only — the VM still doesn't
+  consume upvalue operands or handle `Get/SetUpValue`, so closures that *capture outer locals* don't
+  work yet; **26+ (GC, classes, inheritance, optimization)** not started.
 - **Known remaining work** (see [tasks.md](../tasks.md)):
-  - Deferred to chapters: finishing closures (Ch. 25), the string-memory leak → GC (Ch. 26).
+  - Deferred to chapters: finishing closures — upvalue *capture* (Ch. 25) — and the string-memory
+    leak → GC (Ch. 26).
   - Open cleanups: `&mut self` → `&self` batch (clippy `needless_pass_by_ref_mut`), the
     `resolve_local` clone, re-enabling the REPL/CLI.
   - Structural refactors: `contexts` `Vec` + index arithmetic (#2), the read/write accessor split (#3).
   - Error-handling polish: reset the stack + attach line/stack-trace to `RuntimeError`; non-zero
     exit code in `run_file`.
-- **Health:** builds clean, 20/20 tests pass, `cargo clippy` free of `absurd_extreme_comparisons`,
+- **Health:** builds clean, 22/22 tests pass, `cargo clippy` free of `absurd_extreme_comparisons`,
   22 dead-code warnings (intentional scaffolding).

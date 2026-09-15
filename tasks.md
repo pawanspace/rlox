@@ -31,6 +31,13 @@ not here.)_
   `InterpretRuntimeError` instead of building a call frame with a misaligned stack. Covered by
   `arity_mismatch_should_result_in_errors`.
 
+- [x] **Recursion broken (phantom upvalue)** — fixed. A function's self-reference resolved as a
+  global correctly, but `recursive_resolve_up_value` still called `add_up_value` in the not-found
+  branch, recording a phantom upvalue at index `-1 as u8 = 255`. The compiler emitted operand bytes
+  for it that the half-done `Closure` opcode never consumed, so the ip drifted and the VM halted.
+  Guarded with `if r_index != -1`. Top-level recursion now runs as a global lookup (Ch. 24). Covered
+  by `recursion_runs_a_function_body_to_completion` and `function_returns_and_first_class_call`.
+
 - [x] **`runtime_error` doesn't surface errors** — fixed. It now builds a `RuntimeError`, fallible
   ops return `Result<(), RuntimeError>` and propagate it, the dispatch loop maps it to
   `InterpretResult::InterpretRuntimeError(RuntimeError)`, and `main` prints the message to stderr.

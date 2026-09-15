@@ -933,4 +933,20 @@ mod tests {
             InterpretResult::InterpretRuntimeError(_)
         ));
     }
+
+    // Recursion: a function calling itself by name resolves the self-reference
+    // as a global (Chapter 24). Guards against the phantom-upvalue regression
+    // that used to derail the VM before it printed a result.
+    #[test]
+    fn recursion_runs_a_function_body_to_completion() {
+        let src = "fun fact(n) { if (n <= 1) { return 1; } return n * fact(n - 1); } print fact(5);";
+        assert_eq!(run(src).1, ["120"]);
+    }
+
+    // A function calling another already-defined function.
+    #[test]
+    fn function_returns_and_first_class_call() {
+        let src = "fun add(a, b) { return a + b; } var f = add; print f(3, 4);";
+        assert_eq!(run(src).1, ["7"]);
+    }
 }
