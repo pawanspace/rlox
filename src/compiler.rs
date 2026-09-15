@@ -467,7 +467,7 @@ impl<'c> Compiler<'c> {
                     true => {
                         self.parse_and_define_parameter();
                         arity = self.increment_arity(arity);
-                }
+                    }
                     false => break,
                 }
             }
@@ -519,7 +519,7 @@ impl<'c> Compiler<'c> {
         });
     }
 
-    fn increment_arity(&mut self, arity: u8) -> u8{
+    fn increment_arity(&mut self, arity: u8) -> u8 {
         if arity == 255 {
             self.error_at_current("Value can not exceed 255.");
             arity
@@ -586,9 +586,9 @@ impl<'c> Compiler<'c> {
                     let r_index =
                         self.recursive_resolve_up_value(name, context_index - 1, scope_depth - 1);
                     if r_index != -1 {
-                    self.add_up_value(r_index as u8, false, context_index);
+                        self.add_up_value(r_index as u8, false, context_index);
                     }
-                r_index
+                    r_index
                 }
             }
             None => -1,
@@ -1067,7 +1067,9 @@ impl<'c> Compiler<'c> {
         }
         // Drop the discarded slots from the end; the new length is the live
         // local count. `truncate` takes the length to KEEP, not to remove.
-        self.current_context_mut().locals.truncate(local_len - scoped_locals);
+        self.current_context_mut()
+            .locals
+            .truncate(local_len - scoped_locals);
     }
 
     /// An expression used as a statement (e.g. a function call). The
@@ -1386,7 +1388,7 @@ impl<'c> Compiler<'c> {
     }
 
     /// Extract the previous token's text (owned) and its hash, for interning.
-    fn prev_token_to_string(& self) -> (String, u32) {
+    fn prev_token_to_string(&self) -> (String, u32) {
         let token = self.parser.previous.unwrap();
 
         let str_value = if token.token_type == TokenType::String {

@@ -41,7 +41,9 @@ use colored::{Color, Colorize};
 const STACK_MAX: usize = 512;
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct RuntimeError {pub message: String}
+pub(crate) struct RuntimeError {
+    pub message: String,
+}
 
 /// The virtual machine: holds all runtime state while executing bytecode.
 #[derive(Debug)]
@@ -69,7 +71,7 @@ pub(crate) struct VM {
     call_frames: Vec<Option<CallFrame>>,
     /// Number of active call frames — index of the next free frame slot.
     frame_count: usize,
-    output: Vec<String>
+    output: Vec<String>,
 }
 
 /// One activation record for a running function call.
@@ -262,7 +264,10 @@ impl VM {
     /// order.
     fn pop_pair(&mut self) -> (&Option<Value>, &Option<Value>) {
         self.stack_top -= 2;
-        (self.stack.get(self.stack_top + 1).unwrap(), self.stack.get(self.stack_top).unwrap())
+        (
+            self.stack.get(self.stack_top + 1).unwrap(),
+            self.stack.get(self.stack_top).unwrap(),
+        )
     }
 
     /// Look at a value without removing it. `distance` is measured from the top:
@@ -272,7 +277,6 @@ impl VM {
         self.stack.get(self.stack_top - 1 - distance).unwrap()
     }
 
-
     /// Build a `RuntimeError` describing a failure.
     ///
     /// This only *constructs* the error value; it doesn't print or unwind.
@@ -280,8 +284,10 @@ impl VM {
     /// into `InterpretResult::InterpretRuntimeError`, and the boundary (`main`)
     /// is responsible for displaying it. (A future improvement is to also reset
     /// the stack and attach the line/stack trace here.)
-    fn runtime_error(&self, message: &str) -> RuntimeError{
-        RuntimeError{message: message.to_string()}
+    fn runtime_error(&self, message: &str) -> RuntimeError {
+        RuntimeError {
+            message: message.to_string(),
+        }
     }
 
     /// The heart of the VM: the **dispatch loop**.
@@ -327,7 +333,8 @@ impl VM {
                     // Unary minus: peek to type-check, then pop and push -x.
                     let value = self.peek(0).as_ref().unwrap();
                     if !value.is_number() {
-                        let runtime_error = self.runtime_error("Expected number for Negate opcode!");
+                        let runtime_error =
+                            self.runtime_error("Expected number for Negate opcode!");
                         return InterpretResult::InterpretRuntimeError(runtime_error);
                     }
                     let pop_val = self.pop().as_ref().unwrap();
@@ -355,7 +362,8 @@ impl VM {
                             // NOTE: this reports an error but returns
                             // `InterpretOk` (not `InterpretRuntimeError`), so a
                             // bad Add is silently treated as success.
-                            let runtime_error = self.runtime_error("Unknown type detected for Add operation");
+                            let runtime_error =
+                                self.runtime_error("Unknown type detected for Add operation");
                             return InterpretResult::InterpretRuntimeError(runtime_error);
                         }
                     }
@@ -460,8 +468,8 @@ impl VM {
                             // the array. It's at `frame_count - 2` because the callee
                             // we just created occupies `frame_count - 1`.
                             self.call_frames[self.frame_count - 2] = Some(old_frame);
-                        },
-                        Err(err) => return InterpretResult::InterpretRuntimeError(err)
+                        }
+                        Err(err) => return InterpretResult::InterpretRuntimeError(err),
                     }
                 }
                 Some(OpCode::JumpIfFalse) => {
@@ -501,7 +509,8 @@ impl VM {
                     // into the local's slot. Peeks (does not pop) because
                     // assignment is an expression whose value stays on the stack.
                     let b = READ_BYTE!(self, current_frame);
-                    self.stack[current_frame.cf_stack_top + b as usize] = Some(self.peek(0).as_ref().unwrap().clone());
+                    self.stack[current_frame.cf_stack_top + b as usize] =
+                        Some(self.peek(0).as_ref().unwrap().clone());
                 }
                 Some(OpCode::GetGlobalVariable) => {
                     // Read a global by name (name is a constant) and push its
@@ -527,7 +536,7 @@ impl VM {
                 Some(OpCode::Print) => {
                     // `print` statement: pop the value and display it.
                     let v = self.pop().as_ref().unwrap().clone();
-                    let s  = self.format_value(&v);
+                    let s = self.format_value(&v);
                     println!("{s}");
                     self.output.push(s);
                 }
@@ -559,7 +568,10 @@ impl VM {
         let ptr = variable_name.ptr;
         let value = self.peek(0);
 
-        if !self.globals.insert(variable_name.clone(), value.as_ref().unwrap().clone()) {
+        if !self
+            .globals
+            .insert(variable_name.clone(), value.as_ref().unwrap().clone())
+        {
             self.globals.delete(variable_name.clone());
             let key = memory::read_string(ptr, size);
             let message = format!("Unable to find value for key {:?}", key);
@@ -581,10 +593,7 @@ impl VM {
         let size = variable_name.size;
         let ptr = variable_name.ptr;
         let value = self.get_variable_value(variable_name);
-        debug::info(format!(
-            "Found global value: {:?}",
-            value
-        ));
+        debug::info(format!("Found global value: {:?}", value));
         match value {
             Some(val) => match value {
                 Some(Value::Boolean(v)) => {
@@ -701,7 +710,7 @@ impl VM {
                                 "Expected: {:?} arguments but received: {:?}",
                                 function.arity, arg_count
                             )
-                                .as_str(),
+                            .as_str(),
                         ));
                     }
                     self.create_call_frame(function, arg_count);
@@ -798,10 +807,7 @@ impl VM {
 
     /// Look up a global's value by name in the `globals` table.
     fn get_variable_value(&self, variable_name: FatPointer) -> Option<&Value> {
-        debug::info(format!(
-            "Get variable value for key: {:?}",
-            variable_name
-        ));
+        debug::info(format!("Get variable value for key: {:?}", variable_name));
         self.globals.get(variable_name)
     }
 
@@ -825,7 +831,7 @@ impl VM {
     /// concatenated strings don't compare equal under `OpCode::Equal` (that
     /// path compares string pointers, not contents).
     fn concat(&mut self) -> Value {
-        let(second_val, first_val) = self.pop_pair();
+        let (second_val, first_val) = self.pop_pair();
         let first = FatPointer::try_from(first_val.as_ref().unwrap()).unwrap();
         let second = FatPointer::try_from(second_val.as_ref().unwrap()).unwrap();
 
@@ -841,7 +847,11 @@ impl VM {
         // immutably, but the `None` branch needs `self.table.insert` (mutable).
         // Cloning the found `FatPointer` out ends the immutable borrow so the
         // mutable `insert` is allowed.
-        match self.table.find_entry_with_value(&content, hash_value).cloned() {
+        match self
+            .table
+            .find_entry_with_value(&content, hash_value)
+            .cloned()
+        {
             Some(existing) => Value::from(Obj::from(existing)),
             None => {
                 let concat_ptr = FatPointer {
@@ -895,12 +905,14 @@ mod tests {
         vm.interpret(src.to_string())
     }
 
-    #[test] fn arithmetic_precedence() {
+    #[test]
+    fn arithmetic_precedence() {
         assert_eq!(run("print 1 + 2 * 3;").1, ["7"]);
     }
 
     // Guards the fixed local-scoping bug end-to-end.
-    #[test] fn scoping_regression() {
+    #[test]
+    fn scoping_regression() {
         let src = "var i = 10; while (i < 15) { i = i + 1; } \
                    for (var i = 8; i < 10; i = i + 1) {} print i;";
         assert_eq!(run(src).1, ["15"]);
@@ -908,12 +920,17 @@ mod tests {
 
     // Regression test for string concat + equality: `concat` interns its result
     // (and literals are unquoted), so a computed string equals the matching literal.
-    #[test] fn concat_string_equality() {
+    #[test]
+    fn concat_string_equality() {
         assert_eq!(run(r#"print "a" + "b" == "ab";"#).1, ["true"]);
     }
 
-    #[test] fn arity_mismatch_should_result_in_errors() {
+    #[test]
+    fn arity_mismatch_should_result_in_errors() {
         let result = run("fun add(a, b) { return a + b; } add(1);");
-        assert!(matches!(result.0, InterpretResult::InterpretRuntimeError(_)));
+        assert!(matches!(
+            result.0,
+            InterpretResult::InterpretRuntimeError(_)
+        ));
     }
 }

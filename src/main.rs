@@ -24,9 +24,9 @@
 use clap::Parser;
 use std::{env, fs};
 
+use crate::vm::InterpretResult;
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use crate::vm::InterpretResult;
 
 // `mod NAME;` declarations pull each sibling file (e.g. `scanner.rs`) into the
 // crate as a module. This is how Rust wires the codebase together — nothing in
@@ -82,9 +82,9 @@ fn run_file(path: PathBuf) {
     }
     let mut vm = vm::VM::init();
     let result = vm.interpret(contents.to_string());
-    match  result.0 {
+    match result.0 {
         InterpretResult::InterpretRuntimeError(err) => eprintln!("{}", err.message),
-        _ => ()
+        _ => (),
     }
 }
 

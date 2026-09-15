@@ -206,14 +206,14 @@ pub fn copy(src: *mut u8, dest: *mut u8, length: usize, offset: usize) {
     unsafe { std::ptr::copy_nonoverlapping(src, dest.offset(offset as isize), length) }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn can_allocated_long_string() {
-        let mut src = String::from("hello world is so old that I am just getting tired of it now and its not working");
+        let mut src = String::from(
+            "hello world is so old that I am just getting tired of it now and its not working",
+        );
         let ptr = allocate_bytes(src.len());
         copy(src.as_mut_ptr(), ptr, src.len(), 0);
         let value = read_string(ptr, src.len());

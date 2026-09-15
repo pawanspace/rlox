@@ -115,9 +115,6 @@ where
         new_value
     }
 
-
-
-
     /// Look up `key`; return `Some(&value)` if present, else `None`.
     pub(crate) fn get(&self, key: FatPointer) -> Option<&T> {
         // Match on the `Option` from `find_entry`: `Some(Occupied)` is a hit,
@@ -154,7 +151,7 @@ where
                 }
                 value
             }
-            None => None
+            None => None,
         }
     }
 
@@ -184,7 +181,7 @@ where
         // `((size + 1) / capacity) * 100 > load_factor`, where the integer
         // division collapsed to 0 until the table was essentially full, ignoring
         // the 70% target entirely.)
-        if (self.size + 1)  * 100 > self.load_factor * self.capacity {
+        if (self.size + 1) * 100 > self.load_factor * self.capacity {
             self.capacity = (self.capacity * 2) + 1;
             let mut temp_entries: Vec<Entry<T>> = vec![];
             temp_entries.resize(self.capacity, Entry::Vacant);
@@ -224,7 +221,6 @@ where
         bucket as usize
     }
 
-
     fn find_bucket_to_insert(&self, key: &FatPointer, entries: &Vec<Entry<T>>) -> usize {
         let mut bucket = key.hash % (self.capacity as u32);
 
@@ -237,9 +233,9 @@ where
                     if existing.eq(key) {
                         return bucket as usize;
                     }
-                },
+                }
                 Entry::TombStone => tombstone_index = bucket as i32,
-                Entry::Vacant => break
+                Entry::Vacant => break,
             }
             // `+ 1` moves to the next slot; `% capacity` wraps back to 0 at the
             // end so the probe is circular.
@@ -251,7 +247,6 @@ where
         }
         bucket as usize
     }
-
 
     /// Debug helper: print the whole bucket array.
     pub(crate) fn dump(&self) {
@@ -328,7 +323,7 @@ where
                             bucket = (bucket + 1) % (self.capacity as u32);
                             continue;
                         }
-                    },
+                    }
                     // Empty slot: key definitively absent, stop probing.
                     Entry::Vacant => None,
                     // Deleted: skip and keep probing.
@@ -462,8 +457,11 @@ mod tests {
     #[test]
     fn can_expand_capacity_as_required() {
         let mut map = Table::init(1);
-        let (mut one_s, mut two_s, mut three_s) =
-            (String::from("one"), String::from("two"), String::from("three"));
+        let (mut one_s, mut two_s, mut three_s) = (
+            String::from("one"),
+            String::from("two"),
+            String::from("three"),
+        );
         let one = create_fat_ptr(&mut one_s);
         let two = create_fat_ptr(&mut two_s);
         let _three = create_fat_ptr(&mut three_s);
@@ -512,8 +510,16 @@ mod tests {
         let mut map = Table::init(8);
         let mut a_s = String::from("a");
         let mut b_s = String::from("b");
-        let a = FatPointer {ptr: a_s.as_mut_ptr(), size: a_s.len(), hash: 0 };
-        let b = FatPointer {ptr: b_s.as_mut_ptr(), size: b_s.len(), hash: 0 };
+        let a = FatPointer {
+            ptr: a_s.as_mut_ptr(),
+            size: a_s.len(),
+            hash: 0,
+        };
+        let b = FatPointer {
+            ptr: b_s.as_mut_ptr(),
+            size: b_s.len(),
+            hash: 0,
+        };
 
         map.insert(a.clone(), 1);
         map.insert(b.clone(), 2);
@@ -531,8 +537,16 @@ mod tests {
         let mut map = Table::init(8);
         let mut a_s = String::from("a");
         let mut b_s = String::from("b");
-        let a = FatPointer {ptr: a_s.as_mut_ptr(), size: a_s.len(), hash: 0 };
-        let b = FatPointer {ptr: b_s.as_mut_ptr(), size: b_s.len(), hash: 0 };
+        let a = FatPointer {
+            ptr: a_s.as_mut_ptr(),
+            size: a_s.len(),
+            hash: 0,
+        };
+        let b = FatPointer {
+            ptr: b_s.as_mut_ptr(),
+            size: b_s.len(),
+            hash: 0,
+        };
 
         map.insert(a.clone(), 1);
         map.insert(b.clone(), 2);
@@ -558,7 +572,11 @@ mod tests {
         let mut map = Table::init(10);
         for i in 0..8 {
             let mut key = format!("key-{}", i);
-            let k = FatPointer{ptr: key.as_mut_ptr(), size: key.len(), hash: i as u32};
+            let k = FatPointer {
+                ptr: key.as_mut_ptr(),
+                size: key.len(),
+                hash: i as u32,
+            };
             map.insert(k.clone(), i);
         }
 

@@ -36,7 +36,6 @@ use std::time::{Duration, Instant};
 /// `OnceLock` makes init race-free and `Mutex` makes each access exclusive.
 static EVENTS: OnceLock<Mutex<HashMap<String, Duration>>> = OnceLock::new();
 
-
 /// Time a closure and record the result under `name`, returning the closure's
 /// own return value untouched.
 ///
@@ -54,7 +53,11 @@ pub(crate) fn record<R>(name: String, mut func: impl FnMut() -> R) -> R {
     let result = func();
     // `elapsed()` = now - start, as a `Duration`.
     let total_time = start.elapsed();
-    EVENTS.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap().insert(name, total_time);
+    EVENTS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap()
+        .insert(name, total_time);
     result
 }
 
@@ -66,11 +69,15 @@ pub(crate) fn record<R>(name: String, mut func: impl FnMut() -> R) -> R {
 pub(crate) fn display() {
     println!("\n\n\n");
 
-    EVENTS.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap().iter().for_each(|(key, value)| {
-        println!(
-            "{}",
-            format!("***** {:?}: {:?} *****", key, value).color(random_color())
-        );
-    });
+    EVENTS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap()
+        .iter()
+        .for_each(|(key, value)| {
+            println!(
+                "{}",
+                format!("***** {:?}: {:?} *****", key, value).color(random_color())
+            );
+        });
 }
-

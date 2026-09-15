@@ -19,11 +19,11 @@
 /// Compute the 32-bit FNV-1a hash of `value`.
 pub(crate) fn hash(value: &str) -> u32 {
     let mut hash = 2166136261; // FNV offset basis (u32 inferred from the constant)
-    // Iterate the UTF-8 *bytes* of the string. This is canonical FNV-1a (which is
-    // defined over bytes) and matches clox; it is also correct for non-ASCII input
-    // and can never index out of bounds. For pure-ASCII strings a byte equals its
-    // char, so existing hashes are unchanged.
-    for b in value.bytes()  {
+                               // Iterate the UTF-8 *bytes* of the string. This is canonical FNV-1a (which is
+                               // defined over bytes) and matches clox; it is also correct for non-ASCII input
+                               // and can never index out of bounds. For pure-ASCII strings a byte equals its
+                               // char, so existing hashes are unchanged.
+    for b in value.bytes() {
         hash ^= b as u32; // FNV-1a: XOR the byte into the hash first
         hash = hash.wrapping_mul(16777619); // then multiply by the FNV prime.
                                             // `wrapping_mul` lets the u32 overflow and wrap

@@ -211,7 +211,9 @@ impl From<Obj> for Value {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ConversionError {pub message: String}
+pub(crate) struct ConversionError {
+    pub message: String,
+}
 
 // The `TryFrom<&Value>` impls below go the other way: unwrap a `Value` back
 // into a raw Rust value. These conversions can *fail* (a `Value` might not hold
@@ -225,7 +227,9 @@ impl TryFrom<&Value> for bool {
     fn try_from(value: &Value) -> Result<bool, Self::Error> {
         match value {
             Value::Boolean(bool_value) => Ok(*bool_value),
-            _ => Err(ConversionError{message: "cannot convert value to bool".to_string()}),
+            _ => Err(ConversionError {
+                message: "cannot convert value to bool".to_string(),
+            }),
         }
     }
 }
@@ -235,11 +239,12 @@ impl TryFrom<&Value> for f64 {
     fn try_from(value: &Value) -> Result<f64, Self::Error> {
         match value {
             Value::Number(f64_value) => Ok(*f64_value),
-            _ => Err(ConversionError{message: "cannot convert value to f64".to_string()}),
+            _ => Err(ConversionError {
+                message: "cannot convert value to f64".to_string(),
+            }),
         }
     }
 }
-
 
 impl TryFrom<&Value> for Obj {
     type Error = ConversionError;
@@ -247,12 +252,12 @@ impl TryFrom<&Value> for Obj {
     fn try_from(value: &Value) -> Result<Obj, Self::Error> {
         match value {
             Value::Obj(obj_value) => Ok(obj_value.clone()),
-            _ => Err(ConversionError{message: "cannot convert value to obj".to_string()}),
+            _ => Err(ConversionError {
+                message: "cannot convert value to obj".to_string(),
+            }),
         }
     }
 }
-
-
 
 impl TryFrom<&Value> for FatPointer {
     type Error = ConversionError;
@@ -260,11 +265,12 @@ impl TryFrom<&Value> for FatPointer {
     fn try_from(value: &Value) -> Result<FatPointer, Self::Error> {
         match value {
             Value::Obj(obj) => Ok(FatPointer::try_from(obj.clone()).unwrap()),
-            _ => Err(ConversionError{message: "cannot convert value to FatPointer".to_string()}),
+            _ => Err(ConversionError {
+                message: "cannot convert value to FatPointer".to_string(),
+            }),
         }
     }
 }
-
 
 /// A hand-rolled string representation: a raw pointer to bytes, the length, and
 /// a cached hash.
@@ -295,7 +301,6 @@ pub(crate) struct FatPointer {
     /// rehashing on every table lookup.
     pub(crate) hash: u32,
 }
-
 
 impl PartialEq for FatPointer {
     fn eq(&self, other: &Self) -> bool {
@@ -437,7 +442,9 @@ impl TryFrom<Obj> for FatPointer {
             // Non-string objects have no FatPointer; return an error instead of
             // fabricating one. (The old `Into` impl built a dangling pointer to a
             // temporary `"".to_string()` here — the reason this is now `TryFrom`.)
-            _ => Err(ConversionError{message: "Can not get FatPointer".to_string()}),
+            _ => Err(ConversionError {
+                message: "Can not get FatPointer".to_string(),
+            }),
         }
     }
 }
@@ -447,11 +454,12 @@ impl TryFrom<Obj> for Function {
     fn try_from(obj: Obj) -> Result<Function, Self::Error> {
         match obj {
             Obj::Fun(function) => Ok(function),
-            _ => Err(ConversionError{message: "Can not get Function".to_string()}),
+            _ => Err(ConversionError {
+                message: "Can not get Function".to_string(),
+            }),
         }
     }
 }
-
 
 /// Pick a random RGB terminal color. Used only by the debug output to tint each
 /// call frame differently so nested calls are easy to tell apart on screen.
