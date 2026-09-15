@@ -348,6 +348,14 @@ pub(crate) enum FunctionType {
     Closure,
 }
 
+/// A built-in function implemented in Rust rather than Lox bytecode.
+///
+/// It's a bare function pointer (no captured state), which is why it's `Copy`
+/// and fits inside a `Clone`-able `Obj`. Takes the call's arguments as a slice
+/// and returns a single `Value`. See `VM::define_native` for registration and
+/// the `Obj::Native` arm of `execute_function` for the call path.
+pub(crate) type NativeFn = fn(&[Value]) -> Value;
+
 /// A heap-allocated object.
 ///
 /// `Value::Number`/`Boolean`/`Missing` are small and live inline on the stack.
@@ -366,6 +374,9 @@ pub(crate) enum Obj {
     // NOTE: a closure should carry captured upvalues; this only wraps the
     // function, matching the incomplete closure support elsewhere.
     Closure(Box<Obj>),
+    /// A built-in function implemented in Rust (see [`NativeFn`]). Unlike `Fun`,
+    /// it carries no `Chunk` — the VM calls the Rust fn directly, with no frame.
+    Native(NativeFn),
     /// The absence of an object.
     Nil,
 }

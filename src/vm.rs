@@ -26,7 +26,7 @@
 
 extern crate num;
 
-use crate::common::{random_color, FatPointer, Function, Obj, OpCode, Value};
+use crate::common::{random_color, FatPointer, Function, NativeFn, Obj, OpCode, Value};
 use crate::debug;
 use crate::hash_map::Table;
 use crate::hasher::hash;
@@ -34,11 +34,23 @@ use crate::metrics;
 use crate::scanner::Scanner;
 use crate::{compiler, memory};
 use colored::{Color, Colorize};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Upper bound on the value stack. Fixed-size stacks are traditional in VMs
 /// because they make pushes O(1) with no reallocation and no bounds surprises;
 /// the tradeoff is a hard recursion/expression-depth limit.
 const STACK_MAX: usize = 512;
+
+/// What a call did to the frame stack, so the `Call` opcode knows how to
+/// continue. A Lox function pushes a new `CallFrame` (the caller must reload
+/// `current_frame`); a native runs inline and pushes only its result (no frame,
+/// nothing to reload).
+enum CallOutcome {
+    /// A Lox function/closure call pushed a new call frame.
+    FramePushed,
+    /// A native function ran inline — no frame was created.
+    NativeInlined,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct RuntimeError {
@@ -223,7 +235,7 @@ impl VM {
         let mut call_frames: Vec<Option<CallFrame>> = Vec::new();
         call_frames.resize(512, None);
 
-        VM {
+        let mut vm = VM {
             ip: -1,
             stack: local_stack,
             stack_top: 0,
@@ -232,7 +244,27 @@ impl VM {
             call_frames,
             frame_count: 0,
             output: Vec::new(),
-        }
+        };
+
+        // Register built-in (native) functions before any program runs. The
+        // non-capturing closure adapts `native_clock`'s zero-arg signature to
+        // the `NativeFn` shape (`fn(&[Value]) -> Value`) and coerces to a plain
+        // function pointer.
+        let native_fn: NativeFn = |_| Self::native_clock();
+        vm.define_native(native_fn, "clock".to_string());
+        vm
+    }
+
+    /// The `clock` native: seconds since the Unix epoch as an `f64`. Lox
+    /// programs use it only to measure elapsed time (`end - start`), for which
+    /// wall-clock epoch seconds are sufficient.
+    fn native_clock() -> Value {
+        Value::Number(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs_f64(),
+        )
     }
 
     /// Clear the stack by resetting the stack pointer to the bottom. (Old
@@ -246,6 +278,30 @@ impl VM {
     fn push(&mut self, value: Value) {
         self.stack[self.stack_top] = Option::Some(value);
         self.stack_top += 1;
+    }
+
+    /// Register a native function as a global named `name`.
+    ///
+    /// The name must be interned into the string `table` (same as `concat`), so
+    /// the `FatPointer` used as the globals key is pointer-identical to the one
+    /// the compiler later produces when it compiles a reference to `name` —
+    /// that's what makes the runtime lookup hit (see HASHMAP.md §4). Called at
+    /// startup from `init`, before any program runs.
+    fn define_native(&mut self, native_fn: NativeFn, name: String) {
+        let size = name.len();
+        let hash_val = hash(name.as_str());
+        let src_bytes = name.as_ptr();
+        let ptr = memory::allocate_bytes(size);
+        memory::copy(src_bytes, ptr, size, 0);
+        let key = FatPointer {
+            ptr,
+            size,
+            hash: hash_val,
+        };
+        // The string `table` only cares about the key; the payload is unused
+        // (mirrors how `concat` interns with `Value::Missing`).
+        self.table.insert(key.clone(), Value::Missing);
+        self.globals.insert(key, Value::Obj(Obj::Native(native_fn)));
     }
 
     /// Pop a value: move the stack pointer down, then return the slot it now
@@ -459,7 +515,7 @@ impl VM {
                     let arg_count = READ_BYTE!(self, current_frame);
                     let old_frame = current_frame.clone();
                     match self.execute_function(arg_count as usize, arg_count) {
-                        Ok(_) => {
+                        Ok(CallOutcome::FramePushed) => {
                             current_frame = self.call_frames[self.frame_count - 1]
                                 .as_ref()
                                 .unwrap()
@@ -469,6 +525,7 @@ impl VM {
                             // we just created occupies `frame_count - 1`.
                             self.call_frames[self.frame_count - 2] = Some(old_frame);
                         }
+                        Ok(CallOutcome::NativeInlined) => (),
                         Err(err) => return InterpretResult::InterpretRuntimeError(err),
                     }
                 }
@@ -698,7 +755,11 @@ impl VM {
     /// argument count doesn't match the function's arity — in which case the
     /// `Call` opcode turns that `false` into an `InterpretRuntimeError` rather
     /// than building a frame with a misaligned stack.
-    fn execute_function(&mut self, distance: usize, arg_count: u8) -> Result<(), RuntimeError> {
+    fn execute_function(
+        &mut self,
+        distance: usize,
+        arg_count: u8,
+    ) -> Result<CallOutcome, RuntimeError> {
         let callee = self.peek(distance);
         if callee.as_ref().unwrap().is_obj() {
             let obj = Obj::try_from(callee.as_ref().unwrap()).unwrap();
@@ -714,7 +775,7 @@ impl VM {
                         ));
                     }
                     self.create_call_frame(function, arg_count);
-                    return Ok(());
+                    return Ok(CallOutcome::FramePushed);
                 }
                 Obj::Closure(obj) => {
                     let function = Function::try_from(*obj).unwrap();
@@ -728,7 +789,24 @@ impl VM {
                         ));
                     }
                     self.create_call_frame(function, arg_count);
-                    return Ok(());
+                    return Ok(CallOutcome::FramePushed);
+                }
+                Obj::Native(native_fn) => {
+                    // Natives run inline: no call frame, no bytecode. Gather the
+                    // argument slots into an owned `Vec<Value>` (the stack holds
+                    // `Option<Value>`, so we can't hand out a `&[Value]` slice
+                    // directly), call the Rust fn, then replace callee + args
+                    // with the single return value. `start - 1` lands on the
+                    // callee's slot; `push` writes the result there.
+                    let start = self.stack_top - arg_count as usize;
+                    let args: Vec<Value> = self.stack[start..self.stack_top]
+                        .iter()
+                        .map(|slot| slot.clone().unwrap())
+                        .collect();
+                    let result = native_fn(&args);
+                    self.stack_top = start - 1;
+                    self.push(result);
+                    return Ok(CallOutcome::NativeInlined);
                 }
                 _ => (),
             }
@@ -801,6 +879,7 @@ impl VM {
             Value::Boolean(boolean) => format!("{}", boolean),
             Value::Missing => "nil".to_string(),
             Value::Obj(Obj::Str(p)) => memory::read_string(p.ptr, p.size),
+            Value::Obj(Obj::Native(_)) => "<native fn>".to_string(),
             Value::Obj(o) => format!("{:?}", o),
         }
     }
@@ -910,6 +989,16 @@ mod tests {
         assert_eq!(run("print 1 + 2 * 3;").1, ["7"]);
     }
 
+    // Native functions (Ch. 24.7): `clock` is registered as a global by the VM
+    // and called inline (no call frame). Guards that the native call path runs
+    // and returns a usable number.
+    #[test]
+    fn native_clock_is_callable_and_returns_a_number() {
+        let (res, out) = run("var s = clock(); print clock() - s >= 0;");
+        assert!(matches!(res, InterpretResult::InterpretOk), "res={:?}", res);
+        assert_eq!(out, ["true"]);
+    }
+
     // Guards the fixed local-scoping bug end-to-end.
     #[test]
     fn scoping_regression() {
@@ -939,7 +1028,8 @@ mod tests {
     // that used to derail the VM before it printed a result.
     #[test]
     fn recursion_runs_a_function_body_to_completion() {
-        let src = "fun fact(n) { if (n <= 1) { return 1; } return n * fact(n - 1); } print fact(5);";
+        let src =
+            "fun fact(n) { if (n <= 1) { return 1; } return n * fact(n - 1); } print fact(5);";
         assert_eq!(run(src).1, ["120"]);
     }
 

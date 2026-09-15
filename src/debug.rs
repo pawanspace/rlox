@@ -52,6 +52,7 @@ pub(crate) fn print_value(value: &Value, new_line: bool) {
                 let str = memory::read_string(fat_ptr.ptr, fat_ptr.size);
                 debug(format!("constant value: {:?}", str), new_line);
             }
+            Obj::Native(_) => debug("constant value: <native fn>".to_string(), new_line),
             _ => debug(format!("constant value: {:?}", obj), new_line),
         },
         _ => debug(format!("constant value: {:?}", value), new_line),

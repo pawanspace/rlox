@@ -202,7 +202,7 @@ pub fn get<T>(ptr: *mut T) -> T {
 /// `copy_nonoverlapping` is the fast path that assumes the source and
 /// destination byte ranges do not overlap (like C's `memcpy`, not `memmove`);
 /// if they did overlap the result would be corrupt.
-pub fn copy(src: *mut u8, dest: *mut u8, length: usize, offset: usize) {
+pub fn copy(src: *const u8, dest: *mut u8, length: usize, offset: usize) {
     unsafe { std::ptr::copy_nonoverlapping(src, dest.offset(offset as isize), length) }
 }
 

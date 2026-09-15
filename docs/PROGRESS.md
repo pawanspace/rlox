@@ -1,8 +1,8 @@
 # rlox — Progress Report
 
 A summary of what changed and what was learned during a focused hardening pass on the rlox bytecode
-VM. The test suite went from *7 tests (1 failing)* to **22 passing, 0 failing**; build warnings
-dropped from ~38 to 22 (all remaining are dead-code for intentionally unwired scaffolding). Six
+VM. The test suite went from *7 tests (1 failing)* to **23 passing, 0 failing**; build warnings
+dropped from ~38 to 21 (all remaining are dead-code for intentionally unwired scaffolding). Six
 design/reference docs were added and the whole codebase was documented.
 
 ---
@@ -56,12 +56,16 @@ design/reference docs were added and the whole codebase was documented.
   records output so tests can run Lox source and assert on it.
 - **Dead-guard / accessor cleanups** — removed always-true `matches!(self, _other)` guards; added a
   shared `current_context()`/`current_context_mut()` split; inlined a needless `get_rule` wrapper.
+- **Native functions (Ch. 24.7)** — `Obj::Native(NativeFn)` (a Rust `fn(&[Value]) -> Value`),
+  `VM::define_native` (interns the name, binds it as a global at startup), a `clock` native, and an
+  inline native call path in `execute_function` (no `CallFrame`; the `Call` opcode branches on a new
+  `CallOutcome` enum so it only reloads a frame for real Lox calls).
 
 ### Tests
-- From 7 (1 failing) to **22 passing**: memory round-trip + `drop_bytes`; hash-map delete,
+- From 7 (1 failing) to **23 passing**: memory round-trip + `drop_bytes`; hash-map delete,
   insert-overwrite, tombstone lookup/reinsert, `get_mut`, resize; hasher empty/non-ASCII; and
   end-to-end VM tests (arithmetic precedence, the scoping regression, concat equality, arity abort,
-  recursion, first-class calls).
+  recursion, first-class calls, native `clock`).
 
 ### Hygiene
 - Removed stray `println!`s, unused imports, spurious `unsafe`, needless parens; dropped the unused
@@ -126,9 +130,11 @@ design/reference docs were added and the whole codebase was documented.
 
 - **Chapters (Crafting Interpreters, clox):** 14–24 done — including **recursion**, which was found
   broken (a global self-reference registered a phantom upvalue, derailing the VM) and fixed; it
-  needs no closures, matching Ch. 24. **25 (closures)** is compile-side only — the VM still doesn't
-  consume upvalue operands or handle `Get/SetUpValue`, so closures that *capture outer locals* don't
-  work yet; **26+ (GC, classes, inheritance, optimization)** not started.
+  needs no closures, matching Ch. 24. **24.7 native functions** are now implemented
+  (`Obj::Native`, `define_native`, a `clock` native, and an inline native call path — no call
+  frame). **25 (closures)** is compile-side only — the VM still doesn't consume upvalue operands or
+  handle `Get/SetUpValue`, so closures that *capture outer locals* don't work yet; **26+ (GC,
+  classes, inheritance, optimization)** not started.
 - **Known remaining work** (see [tasks.md](../tasks.md)):
   - Deferred to chapters: finishing closures — upvalue *capture* (Ch. 25) — and the string-memory
     leak → GC (Ch. 26).
@@ -137,5 +143,5 @@ design/reference docs were added and the whole codebase was documented.
   - Structural refactors: `contexts` `Vec` + index arithmetic (#2), the read/write accessor split (#3).
   - Error-handling polish: reset the stack + attach line/stack-trace to `RuntimeError`; non-zero
     exit code in `run_file`.
-- **Health:** builds clean, 22/22 tests pass, `cargo clippy` free of `absurd_extreme_comparisons`,
-  22 dead-code warnings (intentional scaffolding).
+- **Health:** builds clean, 23/23 tests pass, `cargo clippy` free of `absurd_extreme_comparisons`,
+  21 dead-code warnings (intentional scaffolding).

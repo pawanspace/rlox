@@ -193,7 +193,7 @@ flowchart TD
     C20 --> C21["21 Global Variables ✅"]
     C21 --> C22["22 Local Variables ✅"]
     C22 --> C23["23 Jumping Back and Forth ✅"]
-    C23 --> C24["24 Calls and Functions ✅*"]
+    C23 --> C24["24 Calls and Functions ✅"]
     C24 --> C25["25 Closures ⚠️ in progress"]
     C25 --> C26["26 Garbage Collection ❌"]
     C26 --> C27["27 Classes & Instances ❌"]
@@ -218,10 +218,14 @@ flowchart TD
 - `if`/`else`, `while`, `for`.
 - Function declarations, calls, parameters, arity, `return`; first-class functions (assigning a
   function to a variable and calling through it).
+- Native functions (Chapter 24.7): `clock` is registered as a global at VM startup and callable
+  from Lox.
 
-### Chapter 24 caveat (`✅*`)
-Native functions (e.g. clox's `clock()` / `defineNative`) were **skipped** — there is no
-`Obj::Native`.
+### Chapter 24 — complete (including 24.7 Native Functions)
+Native functions are implemented: `Obj::Native(NativeFn)` wraps a Rust `fn(&[Value]) -> Value`,
+`VM::define_native` interns the name and binds it as a global before any program runs, and the
+`Call` path runs natives inline (no `CallFrame`) via `execute_function` returning
+`CallOutcome::NativeInlined`. `clock` is the one registered native.
 
 ### Chapter 25 — where the work actually stops
 The **compile side** of closures is largely written: the compiler resolves upvalues
