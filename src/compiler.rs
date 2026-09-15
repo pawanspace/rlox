@@ -585,8 +585,10 @@ impl<'c> Compiler<'c> {
                 } else {
                     let r_index =
                         self.recursive_resolve_up_value(name, context_index - 1, scope_depth - 1);
+                    if r_index != -1 {
                     self.add_up_value(r_index as u8, false, context_index);
-                    r_index
+                    }
+                r_index
                 }
             }
             None => -1,
